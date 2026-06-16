@@ -24,4 +24,11 @@ class AudioPlayerViewModel : ObservableObject {
             print("Error occurred")
         }
     }
+    
+    func pause() {
+        guard let player = player else {
+            return
+        }
+        player.pause()
+    }
 }
