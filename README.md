@@ -1,6 +1,6 @@
 # Echo
 
-A macOS app built with SwiftUI.
+A macOS music player built with SwiftUI.
 
 ## Requirements
 

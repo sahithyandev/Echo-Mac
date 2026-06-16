@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Echo is a macOS SwiftUI app targeting macOS 26.5+, written in Swift 5. It currently reads and lists files from the user's Music directory.
+Echo is a macOS music player app built with SwiftUI, targeting macOS 26.5+, written in Swift 5. It reads audio files from the user's Music directory and provides playback controls.
 
 ## Building & Running
 

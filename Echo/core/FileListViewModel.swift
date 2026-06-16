@@ -22,6 +22,8 @@ class FileListViewModel: ObservableObject {
                 includingPropertiesForKeys: [.isRegularFileKey],
                 options: [.skipsHiddenFiles]
             )
+            .filter { $0.pathExtension.lowercased() == "mp3" }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
             print("Loaded \(files.count) files")
         } catch {
             errorMessage = error.localizedDescription
