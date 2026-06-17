@@ -18,7 +18,7 @@ struct Home: View {
                 }
                 .onTapGesture {
                     withAnimation(.spring()) {
-                        playerViewModel.play(song)
+                        playerViewModel.play(song, in: libraryViewModel.songs)
                     }
                 }
             }

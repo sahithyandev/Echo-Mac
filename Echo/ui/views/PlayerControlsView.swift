@@ -17,17 +17,39 @@ struct PlayerControlsView: View {
 
             Spacer()
 
-            Button {
-                playerViewModel.togglePlayPause()
-            } label: {
-                Image(systemName: playerViewModel.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(AppColor.navy)
-                    .frame(width: 36, height: 36)
-                    .background(AppColor.accent)
-                    .clipShape(Circle())
+            HStack(spacing: 8) {
+                Button {
+                    playerViewModel.playPrev()
+                } label: {
+                    Image(systemName: "backward.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(playerViewModel.canPlayPrev ? AppColor.cream : AppColor.cream.opacity(0.3))
+                }
+                .buttonStyle(.plain)
+                .disabled(!playerViewModel.canPlayPrev)
+
+                Button {
+                    playerViewModel.togglePlayPause()
+                } label: {
+                    Image(systemName: playerViewModel.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(AppColor.navy)
+                        .frame(width: 36, height: 36)
+                        .background(AppColor.accent)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    playerViewModel.playNext()
+                } label: {
+                    Image(systemName: "forward.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(playerViewModel.canPlayNext ? AppColor.cream : AppColor.cream.opacity(0.3))
+                }
+                .buttonStyle(.plain)
+                .disabled(!playerViewModel.canPlayNext)
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
