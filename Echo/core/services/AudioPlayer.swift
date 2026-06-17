@@ -19,4 +19,8 @@ class AudioPlayer {
     func resume() {
         player?.play()
     }
+
+    func seek(to time: TimeInterval) {
+        player?.currentTime = time
+    }
 }

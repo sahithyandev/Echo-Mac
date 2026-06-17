@@ -9,6 +9,7 @@ class AudioPlayerViewModel: ObservableObject {
     @Published var progress: Double = 0
 
     private let player = AudioPlayer()
+    private let systemControls = NowPlayingService()
     private var queue: [Song] = []
     private var currentIndex: Int?
     private var progressTimer: Timer?
@@ -17,6 +18,13 @@ class AudioPlayerViewModel: ObservableObject {
     var canPlayNext: Bool {
         guard let idx = currentIndex else { return false }
         return idx < queue.count - 1
+    }
+
+    init() {
+        systemControls.onTogglePlayPause = { [weak self] in self?.togglePlayPause() }
+        systemControls.onNext = { [weak self] in self?.playNext() }
+        systemControls.onPrev = { [weak self] in self?.playPrev() }
+        systemControls.onSeek = { [weak self] time in self?.seek(to: time) }
     }
 
     func play(_ song: Song, in queue: [Song] = []) {
@@ -29,6 +37,7 @@ class AudioPlayerViewModel: ObservableObject {
             nowPlaying = song
             isPlaying = true
             startProgressTimer()
+            updateSystemNowPlaying()
         } catch {
             print("Error playing \(song.title): \(error)")
         }
@@ -42,6 +51,20 @@ class AudioPlayerViewModel: ObservableObject {
             player.resume()
             isPlaying = true
         }
+        updateSystemNowPlaying()
+    }
+
+    func seek(to time: TimeInterval) {
+        player.seek(to: time)
+        updateSystemNowPlaying()
+    }
+
+    private func updateSystemNowPlaying() {
+        guard let song = nowPlaying else {
+            systemControls.clear()
+            return
+        }
+        systemControls.update(song: song, currentTime: player.currentTime, duration: player.duration, isPlaying: isPlaying)
     }
 
     private func startProgressTimer() {
@@ -52,6 +75,7 @@ class AudioPlayerViewModel: ObservableObject {
             Task { @MainActor in
                 let duration = self.player.duration
                 self.progress = duration > 0 ? self.player.currentTime / duration : 0
+                self.updateSystemNowPlaying()
             }
         }
     }
