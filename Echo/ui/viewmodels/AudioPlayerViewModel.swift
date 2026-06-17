@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AVFoundation
 
 @MainActor
 class AudioPlayerViewModel: ObservableObject {

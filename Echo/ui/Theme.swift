@@ -1,9 +1,9 @@
 import SwiftUI
 
-extension Color {
-    static let background = Color("ColorBackground")
+enum AppColor {
+    static let navy = Color("ColorBackground")
     static let accent = Color("ColorAccent")
-    static let surface = Color("ColorSurface")
+    static let cream = Color("ColorSurface")
     static let tealDark = Color("ColorTealDark")
     static let tealLight = Color("ColorTealLight")
 }
