@@ -67,12 +67,26 @@ struct PlayerControlsView: View {
             }
             .frame(height: 3)
             .padding(.horizontal, 16)
-            .padding(.bottom, 12)
+            .padding(.bottom, 4)
+
+            HStack {
+                Spacer()
+                Text("-" + Self.formatTime(playerViewModel.timeRemaining))
+                    .font(.system(size: 10, weight: .regular).monospacedDigit())
+                    .foregroundStyle(AppColor.cream.opacity(0.5))
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
         }
         .background(AppColor.navy)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 8)
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
+    }
+
+    private static func formatTime(_ seconds: TimeInterval) -> String {
+        let s = Int(seconds)
+        return String(format: "%d:%02d", s / 60, s % 60)
     }
 }

@@ -7,6 +7,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var nowPlaying: Song?
     @Published var isPlaying: Bool = false
     @Published var progress: Double = 0
+    @Published var timeRemaining: TimeInterval = 0
 
     private let player = AudioPlayer()
     private let systemControls = NowPlayingService()
@@ -82,6 +83,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             Task { @MainActor in
                 let duration = self.player.duration
                 self.progress = duration > 0 ? self.player.currentTime / duration : 0
+                self.timeRemaining = max(0, duration - self.player.currentTime)
                 self.updateSystemNowPlaying()
             }
         }
