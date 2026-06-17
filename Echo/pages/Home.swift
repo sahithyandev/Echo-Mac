@@ -14,14 +14,23 @@ struct Home: View {
     var username = NSUserName()
     
     var body: some View {
-        List(viewModel.files, id: \.self) { url in
-            Text(url.lastPathComponent)
-                .onTapGesture {
-                    playerModel.play(url)
-                }
-        }
-        .onAppear {
-            viewModel.loadFiles(at: URL(fileURLWithPath: "/Users/\(username)/Music"))
+        ZStack(alignment: .bottom) {
+            List(viewModel.files, id: \.self) { url in
+                Text(url.lastPathComponent)
+                    .onTapGesture {
+                        withAnimation(.spring()) {
+                            playerModel.play(url)
+                        }
+                    }
+            }
+            .onAppear {
+                viewModel.loadFiles(at: URL(fileURLWithPath: "/Users/\(username)/Music"))
+            }
+            
+            if playerModel.nowPlaying != nil {
+                PlayerControlsView(playerModel: playerModel)
+                    .transition(.move(edge: .bottom))
+            }
         }
     }
 }
