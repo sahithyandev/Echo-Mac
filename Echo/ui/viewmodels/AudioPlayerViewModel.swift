@@ -6,10 +6,12 @@ import AVFoundation
 class AudioPlayerViewModel: ObservableObject {
     @Published var nowPlaying: Song?
     @Published var isPlaying: Bool = false
+    @Published var progress: Double = 0
 
     private let player = AudioPlayer()
     private var queue: [Song] = []
     private var currentIndex: Int?
+    private var progressTimer: Timer?
 
     var canPlayPrev: Bool { (currentIndex ?? 0) > 0 }
     var canPlayNext: Bool {
@@ -26,6 +28,7 @@ class AudioPlayerViewModel: ObservableObject {
             try player.play(song)
             nowPlaying = song
             isPlaying = true
+            startProgressTimer()
         } catch {
             print("Error playing \(song.title): \(error)")
         }
@@ -38,6 +41,18 @@ class AudioPlayerViewModel: ObservableObject {
         } else {
             player.resume()
             isPlaying = true
+        }
+    }
+
+    private func startProgressTimer() {
+        progressTimer?.invalidate()
+        progress = 0
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                let duration = self.player.duration
+                self.progress = duration > 0 ? self.player.currentTime / duration : 0
+            }
         }
     }
 
