@@ -4,6 +4,7 @@ import Combine
 @MainActor
 class AudioPlayerViewModel: ObservableObject {
     @Published var nowPlaying: Song?
+    @Published var isPlaying: Bool = false
 
     private let player = AudioPlayer()
 
@@ -11,12 +12,19 @@ class AudioPlayerViewModel: ObservableObject {
         do {
             try player.play(song)
             nowPlaying = song
+            isPlaying = true
         } catch {
             print("Error playing \(song.title): \(error)")
         }
     }
 
-    func pause() {
-        player.pause()
+    func togglePlayPause() {
+        if player.isPlaying {
+            player.pause()
+            isPlaying = false
+        } else {
+            player.resume()
+            isPlaying = true
+        }
     }
 }
