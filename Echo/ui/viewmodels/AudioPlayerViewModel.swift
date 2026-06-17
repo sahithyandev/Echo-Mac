@@ -3,7 +3,7 @@ import Combine
 import AVFoundation
 
 @MainActor
-class AudioPlayerViewModel: ObservableObject {
+class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var nowPlaying: Song?
     @Published var isPlaying: Bool = false
     @Published var progress: Double = 0
@@ -20,11 +20,18 @@ class AudioPlayerViewModel: ObservableObject {
         return idx < queue.count - 1
     }
 
-    init() {
+    override init() {
+        super.init()
+        player.delegate = self
         systemControls.onTogglePlayPause = { [weak self] in self?.togglePlayPause() }
         systemControls.onNext = { [weak self] in self?.playNext() }
         systemControls.onPrev = { [weak self] in self?.playPrev() }
         systemControls.onSeek = { [weak self] time in self?.seek(to: time) }
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        guard flag else { return }
+        Task { @MainActor in self.playNext() }
     }
 
     func play(_ song: Song, in queue: [Song] = []) {

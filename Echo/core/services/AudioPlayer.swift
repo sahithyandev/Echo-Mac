@@ -2,6 +2,7 @@ import AVFoundation
 
 class AudioPlayer {
     private var player: AVAudioPlayer?
+    weak var delegate: AVAudioPlayerDelegate?
 
     var isPlaying: Bool { player?.isPlaying ?? false }
     var currentTime: TimeInterval { player?.currentTime ?? 0 }
@@ -9,6 +10,7 @@ class AudioPlayer {
 
     func play(_ song: Song) throws {
         player = try AVAudioPlayer(contentsOf: song.url)
+        player?.delegate = delegate
         player?.play()
     }
 
