@@ -2,6 +2,12 @@ import SwiftUI
 
 struct PlayerControlsView: View {
     @ObservedObject var playerViewModel: AudioPlayerViewModel
+    @State private var isScrubbing = false
+    @State private var scrubProgress: Double = 0
+
+    private var displayedProgress: Double {
+        isScrubbing ? scrubProgress : playerViewModel.progress
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,22 +62,50 @@ struct PlayerControlsView: View {
             .padding(.vertical, 12)
 
             GeometryReader { geo in
+                let trackWidth = geo.size.width
+                let fillWidth = trackWidth * displayedProgress
+                let thumbX = fillWidth.clamped(to: 0...trackWidth)
+
                 ZStack(alignment: .leading) {
                     Capsule()
                         .fill(AppColor.cream.opacity(0.15))
+                        .frame(height: 3)
                     Capsule()
                         .fill(AppColor.accent)
-                        .frame(width: geo.size.width * playerViewModel.progress)
-                        .animation(.linear(duration: 0.5), value: playerViewModel.progress)
+                        .frame(width: max(fillWidth, 0), height: 3)
+                        .animation(isScrubbing ? nil : .linear(duration: 0.5), value: displayedProgress)
+
+                    Circle()
+                        .fill(AppColor.cream)
+                        .frame(width: 10, height: 10)
+                        .offset(x: thumbX - 5)
+                        .opacity(isScrubbing ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.15), value: isScrubbing)
                 }
+                .frame(height: 10)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            scrubProgress = (value.location.x / trackWidth).clamped(to: 0...1)
+                            isScrubbing = true
+                        }
+                        .onEnded { value in
+                            let fraction = (value.location.x / trackWidth).clamped(to: 0...1)
+                            playerViewModel.seek(to: fraction * playerViewModel.duration)
+                            isScrubbing = false
+                        }
+                )
             }
-            .frame(height: 3)
+            .frame(height: 10)
             .padding(.horizontal, 16)
             .padding(.bottom, 4)
 
             HStack {
                 Spacer()
-                Text("-" + Self.formatTime(playerViewModel.timeRemaining))
+                Text("-" + Self.formatTime(isScrubbing
+                    ? playerViewModel.duration * (1 - scrubProgress)
+                    : playerViewModel.timeRemaining))
                     .font(.system(size: 10, weight: .regular).monospacedDigit())
                     .foregroundStyle(AppColor.cream.opacity(0.5))
             }
@@ -88,5 +122,11 @@ struct PlayerControlsView: View {
     private static func formatTime(_ seconds: TimeInterval) -> String {
         let s = Int(seconds)
         return String(format: "%d:%02d", s / 60, s % 60)
+    }
+}
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }
