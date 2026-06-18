@@ -9,22 +9,21 @@ import Foundation
 import SwiftUI
 
 struct Root : View {
-    @State var selectedPage: Page? = .home
-
+    @EnvironmentObject private var navigationState: AppNavigationState
     @StateObject private var libraryViewModel = MusicLibraryViewModel()
     @StateObject private var playerViewModel = AudioPlayerViewModel()
 
     var body : some View {
         ZStack {
             NavigationSplitView {
-                List(selection: $selectedPage) {
+                List(selection: $navigationState.currentPage) {
                     Label("Home", systemImage: "music.note.house")
                         .tag(Page.home)
                     Label("Settings", systemImage: "gear")
                         .tag(Page.settings)
                 }
             } detail: {
-                switch selectedPage {
+                switch navigationState.currentPage {
                 case .settings:
                     Settings()
                 default:

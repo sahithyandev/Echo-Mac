@@ -9,9 +9,11 @@ import SwiftUI
 
 @main
 struct EchoApp: App {
+    @StateObject var navigationState = AppNavigationState()
+
     var body: some Scene {
         WindowGroup {
-            Root()
+            Root().environmentObject(navigationState)
         }
     }
 }
