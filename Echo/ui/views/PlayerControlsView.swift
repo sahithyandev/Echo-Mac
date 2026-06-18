@@ -16,11 +16,21 @@ struct PlayerControlsView: View {
                     SongArtworkView(song: song, size: 40)
                 }
 
-                Text(playerViewModel.nowPlaying?.title ?? "")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(AppColor.cream)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(playerViewModel.nowPlaying?.title ?? "")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    if let detail = playerViewModel.nowPlaying.flatMap(subtitle) {
+                        Text(detail)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
 
                 Spacer()
 
@@ -30,7 +40,7 @@ struct PlayerControlsView: View {
                     } label: {
                         Image(systemName: "backward.fill")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(playerViewModel.canPlayPrev ? AppColor.cream : AppColor.cream.opacity(0.3))
+                            .foregroundStyle(playerViewModel.canPlayPrev ? AnyShapeStyle(.primary) : AnyShapeStyle(.primary.opacity(0.3)))
                     }
                     .buttonStyle(.plain)
                     .disabled(!playerViewModel.canPlayPrev)
@@ -40,7 +50,7 @@ struct PlayerControlsView: View {
                     } label: {
                         Image(systemName: playerViewModel.isPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(AppColor.navy)
+                            .foregroundStyle(.white)
                             .frame(width: 36, height: 36)
                             .background(AppColor.accent)
                             .clipShape(Circle())
@@ -52,7 +62,7 @@ struct PlayerControlsView: View {
                     } label: {
                         Image(systemName: "forward.fill")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(playerViewModel.canPlayNext ? AppColor.cream : AppColor.cream.opacity(0.3))
+                            .foregroundStyle(playerViewModel.canPlayNext ? AnyShapeStyle(.primary) : AnyShapeStyle(.primary.opacity(0.3)))
                     }
                     .buttonStyle(.plain)
                     .disabled(!playerViewModel.canPlayNext)
@@ -68,7 +78,7 @@ struct PlayerControlsView: View {
 
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(AppColor.cream.opacity(0.15))
+                        .fill(.primary.opacity(0.15))
                         .frame(height: 3)
                     Capsule()
                         .fill(AppColor.accent)
@@ -76,7 +86,7 @@ struct PlayerControlsView: View {
                         .animation(isScrubbing ? nil : .linear(duration: 0.5), value: displayedProgress)
 
                     Circle()
-                        .fill(AppColor.cream)
+                        .fill(.primary)
                         .frame(width: 10, height: 10)
                         .offset(x: thumbX - 5)
                         .opacity(isScrubbing ? 1 : 0)
@@ -107,16 +117,25 @@ struct PlayerControlsView: View {
                     ? playerViewModel.duration * (1 - scrubProgress)
                     : playerViewModel.timeRemaining))
                     .font(.system(size: 10, weight: .regular).monospacedDigit())
-                    .foregroundStyle(AppColor.cream.opacity(0.5))
+                    .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
         }
-        .background(AppColor.navy)
+        .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 8)
+        .shadow(color: .black.opacity(0.15), radius: 16, x: 0, y: 4)
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
+    }
+
+    private func subtitle(for song: Song) -> String? {
+        switch (song.artist, song.album) {
+        case (let artist?, let album?): return "\(artist) — \(album)"
+        case (let artist?, nil):        return artist
+        case (nil, let album?):         return album
+        case (nil, nil):                return nil
+        }
     }
 
     private static func formatTime(_ seconds: TimeInterval) -> String {
