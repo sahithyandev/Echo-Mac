@@ -3,8 +3,7 @@ import SwiftUI
 struct Home: View {
     @ObservedObject var libraryViewModel: MusicLibraryViewModel
     @ObservedObject var playerViewModel: AudioPlayerViewModel
-
-    var username = NSUserName()
+    @AppStorage("libraryDirectory") var libraryDirectory: String = "/Users/\(NSUserName())/Music"
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -23,7 +22,7 @@ struct Home: View {
                 }
             }
             .onAppear {
-                libraryViewModel.load(from: URL(fileURLWithPath: "/Users/\(username)/Music"))
+                libraryViewModel.load(from: URL(fileURLWithPath: libraryDirectory))
             }
 
         }

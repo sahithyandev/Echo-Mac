@@ -7,7 +7,8 @@
 
 import Foundation
 
-enum Page {
+enum Page: Hashable {
     case home
+    case settings
 }
 
