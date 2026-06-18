@@ -27,9 +27,11 @@ struct Root : View {
                 }
             }
 
-            if playerViewModel.nowPlaying != nil {
-                PlayerControlsView(playerViewModel: playerViewModel)
-                    .transition(.move(edge: .bottom))
+            .safeAreaInset(edge: .bottom) {
+                if playerViewModel.nowPlaying != nil {
+                    PlayerControlsView(playerViewModel: playerViewModel)
+                        .transition(.move(edge: .bottom))
+                }
             }
         }
     }
