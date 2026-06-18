@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct Home: View {
-    @StateObject private var libraryViewModel = MusicLibraryViewModel()
-    @StateObject private var playerViewModel = AudioPlayerViewModel()
+    @ObservedObject var libraryViewModel: MusicLibraryViewModel
+    @ObservedObject var playerViewModel: AudioPlayerViewModel
 
     var username = NSUserName()
 
@@ -26,14 +26,7 @@ struct Home: View {
                 libraryViewModel.load(from: URL(fileURLWithPath: "/Users/\(username)/Music"))
             }
 
-            if playerViewModel.nowPlaying != nil {
-                PlayerControlsView(playerViewModel: playerViewModel)
-                    .transition(.move(edge: .bottom))
-            }
         }
     }
 }
 
-#Preview {
-    Home()
-}

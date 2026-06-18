@@ -11,7 +11,8 @@ import SwiftUI
 struct EchoApp: App {
     var body: some Scene {
         WindowGroup {
-            Home()
+            Root()
         }
     }
 }
+
