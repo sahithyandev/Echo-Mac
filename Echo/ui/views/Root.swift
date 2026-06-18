@@ -10,8 +10,8 @@ import SwiftUI
 
 struct Root : View {
     @EnvironmentObject private var navigationState: AppNavigationState
-    @StateObject private var libraryViewModel = MusicLibraryViewModel()
-    @StateObject private var playerViewModel = AudioPlayerViewModel()
+    @EnvironmentObject private var libraryViewModel: MusicLibraryViewModel
+    @EnvironmentObject private var playerViewModel: AudioPlayerViewModel
 
     var body : some View {
         ZStack {
