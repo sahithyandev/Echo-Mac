@@ -15,6 +15,14 @@ struct EchoApp: App {
         WindowGroup {
             Root().environmentObject(navigationState)
         }
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    navigationState.currentPage = .settings
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+        }
     }
 }
 
