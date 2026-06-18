@@ -8,6 +8,9 @@ class NowPlayingService {
     var onPrev: (() -> Void)?
     var onSeek: ((TimeInterval) -> Void)?
 
+    private var artworkCache: [URL: MPMediaItemArtwork] = [:]
+    private var artworkLoadingURL: URL?
+
     init() {
         let center = MPRemoteCommandCenter.shared()
 
@@ -46,19 +49,34 @@ class NowPlayingService {
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
         ]
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
 
-        Task {
-            if let image = await loadArtwork(from: song.url) {
-                let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-                info[MPMediaItemPropertyArtwork] = artwork
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        if let cached = artworkCache[song.url] {
+            info[MPMediaItemPropertyArtwork] = cached
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        } else {
+            // Don't publish without artwork yet — wait for the async load
+            // so the system never falls back to the app icon.
+            if artworkLoadingURL != song.url {
+                artworkLoadingURL = song.url
+                Task {
+                    if let image = await loadArtwork(from: song.url) {
+                        let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                        self.artworkCache[song.url] = artwork
+                        info[MPMediaItemPropertyArtwork] = artwork
+                    }
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                    MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+                }
+                return
             }
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }
+
+        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
     }
 
     func clear() {
+        artworkLoadingURL = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         MPNowPlayingInfoCenter.default().playbackState = .stopped
     }
