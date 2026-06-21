@@ -49,4 +49,10 @@ struct FeatureExtractorTests {
             try await extractor.extract(from: url)
         }
     }
+
+    @Test("computeRMS returns nil for non-existent file")
+    func rmsNilForMissingFile() {
+        let url = URL(fileURLWithPath: "/tmp/does-not-exist-\(UUID()).mp3")
+        #expect(FeatureExtractor.computeRMS(url: url) == nil)
+    }
 }

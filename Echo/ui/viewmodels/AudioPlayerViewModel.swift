@@ -17,6 +17,11 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var currentIndex: Int?
     private var progressTimer: Timer?
 
+    #if DEBUG
+    @Published var debugFeatures: TrackFeatures?
+    private let featureExtractor = FeatureExtractor()
+    #endif
+
     var canPlayPrev: Bool { (currentIndex ?? 0) > 0 }
     var canPlayNext: Bool {
         guard let idx = currentIndex else { return false }
@@ -51,6 +56,13 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         } catch {
             print("Error playing \(song.title): \(error)")
         }
+        #if DEBUG
+        debugFeatures = nil
+        let url = song.url
+        Task {
+            debugFeatures = try? await featureExtractor.extract(from: url)
+        }
+        #endif
     }
 
     func togglePlayPause() {

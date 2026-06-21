@@ -1,8 +1,9 @@
 import AVFoundation
+import Accelerate
 
-/// Extracts audio features from a song file using ID3 metadata tags.
-/// Falls back gracefully — any tag that's missing or unparseable leaves
-/// the corresponding field nil, which the similarity engine skips.
+/// Extracts audio features from a song file.
+/// ID3 tags provide BPM, key, and genre (present in well-tagged libraries).
+/// RMS loudness is computed from the raw PCM samples and is always available.
 public actor FeatureExtractor {
     public init() {}
 
@@ -11,13 +12,14 @@ public actor FeatureExtractor {
 
         let asset = AVURLAsset(url: url)
 
-        // Duration (always available for valid audio files)
+        // Duration
         let duration = try await asset.load(.duration)
         features.durationSeconds = duration.seconds
 
+        // ID3 metadata
         let metadata = try await asset.load(.metadata)
 
-        // BPM from ID3 TBPM tag
+        // BPM from TBPM tag
         let bpmItems = AVMetadataItem.metadataItems(
             from: metadata, filteredByIdentifier: .id3MetadataBeatsPerMinute)
         if let item = bpmItems.first,
@@ -26,7 +28,7 @@ public actor FeatureExtractor {
             features.tempoEstimate = bpm
         }
 
-        // Musical key from ID3 TKEY tag (e.g. "Am", "C#", "Bbm")
+        // Musical key from TKEY tag (e.g. "Am", "C#", "Bbm")
         let keyItems = AVMetadataItem.metadataItems(
             from: metadata, filteredByIdentifier: .id3MetadataInitialKey)
         if let item = keyItems.first,
@@ -36,7 +38,7 @@ public actor FeatureExtractor {
             features.mode = parsed.isMinor ? 0 : 1
         }
 
-        // Genre from common metadata (maps to TCON in ID3, ©gen in iTunes/AAC)
+        // Genre from common metadata (TCON in ID3, ©gen in iTunes/AAC)
         let genreItems = AVMetadataItem.metadataItems(
             from: metadata,
             withKey: AVMetadataKey.commonKeyType,
@@ -46,7 +48,44 @@ public actor FeatureExtractor {
             features.genre = genre
         }
 
+        // RMS loudness — always computable, no tags needed
+        features.averageLoudness = Self.computeRMS(url: url)
+
         return features
+    }
+
+    // Reads decoded PCM samples in chunks and computes overall RMS loudness in dBFS.
+    // Uses channel 0 only — L and R are highly correlated in typical music.
+    // vDSP_rmsqv computes sqrt(sum(x²)/n) for a Float array in a single pass.
+    static func computeRMS(url: URL) -> Double? {
+        guard let file = try? AVAudioFile(forReading: url) else { return nil }
+
+        let format = file.processingFormat
+        let chunkSize: AVAudioFrameCount = 65536
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkSize) else {
+            return nil
+        }
+
+        var totalSumOfSquares: Double = 0
+        var totalFrames: Int = 0
+
+        while file.framePosition < file.length {
+            do { try file.read(into: buffer) } catch { break }
+            let n = Int(buffer.frameLength)
+            guard n > 0, let channel = buffer.floatChannelData?[0] else { break }
+
+            // vDSP_rmsqv: result = sqrt( sum(channel[i]²) / n )
+            // so channel[i]² sum = result² × n
+            var rms: Float = 0
+            vDSP_rmsqv(channel, 1, &rms, vDSP_Length(n))
+            totalSumOfSquares += Double(rms * rms) * Double(n)
+            totalFrames += n
+        }
+
+        guard totalFrames > 0 else { return nil }
+        let overallRMS = sqrt(totalSumOfSquares / Double(totalFrames))
+        guard overallRMS > 0 else { return nil }
+        return 20 * log10(overallRMS)   // dBFS, e.g. -14.0 for a loud track
     }
 
     // TKEY values: note name + optional accidental + optional "m" for minor.
@@ -60,19 +99,19 @@ public actor FeatureExtractor {
 
         let pitchClass: Int
         switch note {
-        case "C":       pitchClass = 0
+        case "C":         pitchClass = 0
         case "C#", "Db": pitchClass = 1
-        case "D":       pitchClass = 2
+        case "D":         pitchClass = 2
         case "D#", "Eb": pitchClass = 3
-        case "E":       pitchClass = 4
-        case "F":       pitchClass = 5
+        case "E":         pitchClass = 4
+        case "F":         pitchClass = 5
         case "F#", "Gb": pitchClass = 6
-        case "G":       pitchClass = 7
+        case "G":         pitchClass = 7
         case "G#", "Ab": pitchClass = 8
-        case "A":       pitchClass = 9
+        case "A":         pitchClass = 9
         case "A#", "Bb": pitchClass = 10
-        case "B":       pitchClass = 11
-        default:        return nil
+        case "B":         pitchClass = 11
+        default:          return nil
         }
         return (pitchClass, isMinor)
     }

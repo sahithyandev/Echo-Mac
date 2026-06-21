@@ -72,6 +72,14 @@ struct PlayerControlsView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
 
+            #if DEBUG
+            if let features = playerViewModel.debugFeatures {
+                DebugFeaturesView(features: features)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 4)
+            }
+            #endif
+
             GeometryReader { geo in
                 let trackWidth = geo.size.width
                 let fillWidth = trackWidth * displayedProgress
@@ -144,6 +152,45 @@ struct PlayerControlsView: View {
         return String(format: "%d:%02d", s / 60, s % 60)
     }
 }
+
+#if DEBUG
+private struct DebugFeaturesView: View {
+    let features: TrackFeatures
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("⚙ extracted features")
+                .font(.caption2).bold()
+                .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                label("BPM", value: features.tempoEstimate.map { "\(Int($0))" })
+                label("Key", value: keyLabel)
+                label("Genre", value: features.genre)
+                label("Duration", value: features.durationSeconds.map { "\(Int($0))s" })
+                label("Loudness", value: features.averageLoudness.map { String(format: "%.1f dB", $0) })
+            }
+        }
+        .font(.caption2)
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func label(_ title: String, value: String?) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title).foregroundStyle(.tertiary)
+            Text(value ?? "—").foregroundStyle(.secondary)
+        }
+    }
+
+    private var keyLabel: String? {
+        guard let k = features.key else { return nil }
+        let names = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
+        let suffix = features.mode == 0 ? "m" : ""
+        return "\(names[k])\(suffix)"
+    }
+}
+#endif
 
 private extension Comparable {
     func clamped(to range: ClosedRange<Self>) -> Self {
