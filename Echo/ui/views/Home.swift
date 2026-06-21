@@ -1,4 +1,5 @@
 import SwiftUI
+import EchoCore
 
 struct Home: View {
     @ObservedObject var libraryViewModel: MusicLibraryViewModel

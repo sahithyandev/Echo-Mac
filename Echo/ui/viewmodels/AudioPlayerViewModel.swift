@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import AVFoundation
+import EchoCore
 
 @MainActor
 class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {

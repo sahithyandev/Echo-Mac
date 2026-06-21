@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import AppKit
+import EchoCore
 
 struct SongArtworkView: View {
     let song: Song

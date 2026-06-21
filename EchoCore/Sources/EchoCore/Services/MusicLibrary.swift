@@ -1,7 +1,9 @@
 import Foundation
 
-class MusicLibrary {
-    func songs(in directoryURL: URL) throws -> [Song] {
+public class MusicLibrary {
+    public init() {}
+
+    public func songs(in directoryURL: URL) throws -> [Song] {
         try FileManager.default
             .contentsOfDirectory(
                 at: directoryURL,
