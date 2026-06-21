@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		3E8C93822FE79C630071F852 /* EchoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3E8C93812FE79C630071F852 /* EchoCore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		3E44CB192FE1873B003B7636 /* Echo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Echo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3E8C93822FE79C630071F852 /* EchoCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = Echo;
 			packageProductDependencies = (
+				3E8C93812FE79C630071F852 /* EchoCore */,
 			);
 			productName = Echo;
 			productReference = 3E44CB192FE1873B003B7636 /* Echo.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = 3E44CB102FE1873B003B7636;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				3E8C93802FE79C630071F852 /* XCLocalSwiftPackageReference "EchoCore" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3E44CB1A2FE1873B003B7636 /* Products */;
 			projectDirPath = "";
@@ -347,6 +356,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		3E8C93802FE79C630071F852 /* XCLocalSwiftPackageReference "EchoCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = EchoCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		3E8C93812FE79C630071F852 /* EchoCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = EchoCore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 3E44CB112FE1873B003B7636 /* Project object */;
 }
