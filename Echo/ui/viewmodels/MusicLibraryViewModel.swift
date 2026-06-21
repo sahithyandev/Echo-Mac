@@ -7,6 +7,12 @@ import EchoCore
 class MusicLibraryViewModel: ObservableObject {
     @Published var songs: [Song] = []
     @Published var errorMessage: String?
+    #if DEBUG
+    @Published var debugAnalysisState: DebugAnalysisState = .idle
+    enum DebugAnalysisState {
+        case idle, analyzing, done([TrackFeatures])
+    }
+    #endif
 
     private let library = MusicLibrary()
 
@@ -14,6 +20,17 @@ class MusicLibraryViewModel: ObservableObject {
         do {
             songs = try library.songs(in: directoryURL)
             Task { await loadMetadata() }
+            let urls = songs.map(\.url)
+            Task {
+                #if DEBUG
+                debugAnalysisState = .analyzing
+                #endif
+                try? await RecommendationEngine.shared.analyze(library: urls)
+                #if DEBUG
+                let features = await RecommendationEngine.shared.allCachedFeatures()
+                debugAnalysisState = .done(features)
+                #endif
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

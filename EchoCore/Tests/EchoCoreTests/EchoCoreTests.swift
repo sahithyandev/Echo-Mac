@@ -56,3 +56,59 @@ struct FeatureExtractorTests {
         #expect(FeatureExtractor.computeRMS(url: url) == nil)
     }
 }
+
+@Suite("FeatureStore")
+struct FeatureStoreTests {
+    private func tempStoreURL() -> URL {
+        URL(fileURLWithPath: "/tmp/echocore-test-\(UUID()).json")
+    }
+
+    @Test("save and reload persists features")
+    func saveAndReload() async throws {
+        let storeURL = tempStoreURL()
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+
+        let songURL = URL(fileURLWithPath: "/tmp/song.mp3")
+        var features = TrackFeatures(songURL: songURL)
+        features.tempoEstimate = 128.0
+        features.averageLoudness = -14.5
+
+        let store = FeatureStore(storeURL: storeURL)
+        await store.load()
+        try await store.save(features)
+
+        // Fresh store, same path — simulates app relaunch
+        let reloaded = FeatureStore(storeURL: storeURL)
+        await reloaded.load()
+        let result = await reloaded.features(for: songURL)
+
+        #expect(result?.tempoEstimate == 128.0)
+        #expect(result?.averageLoudness == -14.5)
+    }
+
+    @Test("features returns nil for unknown URL")
+    func unknownURL() async {
+        let store = FeatureStore(storeURL: tempStoreURL())
+        await store.load()
+        let result = await store.features(for: URL(fileURLWithPath: "/tmp/unknown.mp3"))
+        #expect(result == nil)
+    }
+
+    @Test("allFeatures returns saved entries")
+    func allFeaturesCount() async throws {
+        let storeURL = tempStoreURL()
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+
+        let store = FeatureStore(storeURL: storeURL)
+        await store.load()
+
+        for i in 0..<3 {
+            var f = TrackFeatures(songURL: URL(fileURLWithPath: "/tmp/song\(i).mp3"))
+            f.tempoEstimate = Double(120 + i * 10)
+            try await store.save(f)
+        }
+
+        let all = await store.allFeatures()
+        #expect(all.count == 3)
+    }
+}

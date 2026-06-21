@@ -1,7 +1,8 @@
 import Foundation
 
 /// Audio features extracted from a song, used as the input vector for similarity comparison.
-public struct TrackFeatures: Codable, Sendable {
+public struct TrackFeatures: Codable, Sendable, Identifiable {
+    public var id: URL { songURL }
     public let songURL: URL
     public let extractedAt: Date
 
