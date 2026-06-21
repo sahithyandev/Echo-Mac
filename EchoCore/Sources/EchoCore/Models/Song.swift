@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Song: Identifiable {
+public struct Song: Identifiable, Equatable {
     public let id: UUID = UUID()
     public let url: URL
     public var title: String

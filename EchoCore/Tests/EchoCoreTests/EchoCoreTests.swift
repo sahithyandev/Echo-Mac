@@ -57,6 +57,85 @@ struct FeatureExtractorTests {
     }
 }
 
+@Suite("SimilarityEngine")
+struct SimilarityEngineTests {
+    private let engine = SimilarityEngine()
+
+    private func make(_ path: String, bpm: Double? = nil, key: Int? = nil, mode: Int? = nil,
+                      loudness: Double? = nil, duration: Double? = nil) -> TrackFeatures {
+        var f = TrackFeatures(songURL: URL(fileURLWithPath: path))
+        f.tempoEstimate = bpm
+        f.key = key
+        f.mode = mode
+        f.averageLoudness = loudness
+        f.durationSeconds = duration
+        return f
+    }
+
+    @Test("identical features produce score of 1")
+    func identicalFeatures() {
+        let seed = make("/a.mp3", bpm: 128, key: 0, mode: 1, loudness: -14, duration: 200)
+        let copy = make("/b.mp3", bpm: 128, key: 0, mode: 1, loudness: -14, duration: 200)
+        let results = engine.recommendations(for: seed, from: [seed, copy])
+        #expect(results.first?.similarityScore == 1.0)
+    }
+
+    @Test("closer BPM ranks higher")
+    func closerBPMRanksHigher() {
+        let seed  = make("/seed.mp3",  bpm: 128)
+        let close = make("/close.mp3", bpm: 130)
+        let far   = make("/far.mp3",   bpm: 90)
+        let results = engine.recommendations(for: seed, from: [seed, close, far])
+        let urls = results.map(\.songURL.lastPathComponent)
+        #expect(urls.first == "close.mp3")
+    }
+
+    @Test("seed excluded from results")
+    func seedExcluded() {
+        let seed = make("/seed.mp3", bpm: 128)
+        let other = make("/other.mp3", bpm: 128)
+        let results = engine.recommendations(for: seed, from: [seed, other])
+        #expect(!results.map(\.songURL).contains(seed.songURL))
+    }
+
+    @Test("nil features are skipped — score still computed from available features")
+    func nilFeaturesSkipped() {
+        let seed      = make("/seed.mp3",  bpm: 128, loudness: -14)
+        let withKey   = make("/match.mp3", bpm: 128, key: 5, loudness: -14)  // same BPM + loudness
+        let noFeature = make("/empty.mp3")                                    // no features
+        let results = engine.recommendations(for: seed, from: [seed, withKey, noFeature])
+        #expect(results.first?.songURL.lastPathComponent == "match.mp3")
+    }
+
+    @Test("same key and mode ranks above different mode")
+    func keyModeRanking() {
+        let seed     = make("/seed.mp3",   key: 0, mode: 1)
+        let sameMode = make("/same.mp3",   key: 0, mode: 1)
+        let diffMode = make("/diff.mp3",   key: 0, mode: 0)
+        let results = engine.recommendations(for: seed, from: [seed, sameMode, diffMode])
+        #expect(results.first?.songURL.lastPathComponent == "same.mp3")
+    }
+
+    @Test("circular key distance: B and C closer than B and F#")
+    func circularKeyDistance() {
+        // B = 11, C = 0 → dist = min(11, 1) = 1
+        // B = 11, F# = 6 → dist = min(5, 7) = 5
+        let seed  = make("/seed.mp3", key: 11)
+        let close = make("/c.mp3",    key: 0)   // C — 1 semitone away via octave
+        let far   = make("/fs.mp3",   key: 6)   // F# — 5 semitones away
+        let results = engine.recommendations(for: seed, from: [seed, close, far])
+        #expect(results.first?.songURL.lastPathComponent == "c.mp3")
+    }
+
+    @Test("count is respected")
+    func countRespected() {
+        let seed = make("/seed.mp3", bpm: 120)
+        let library = (1...20).map { make("/s\($0).mp3", bpm: Double(100 + $0)) }
+        let results = engine.recommendations(for: seed, from: [seed] + library, count: 5)
+        #expect(results.count == 5)
+    }
+}
+
 @Suite("FeatureStore")
 struct FeatureStoreTests {
     private func tempStoreURL() -> URL {

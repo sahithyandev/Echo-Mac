@@ -7,6 +7,7 @@ public actor RecommendationEngine {
 
     private let store: FeatureStore
     private let extractor = FeatureExtractor()
+    private let similarity = SimilarityEngine()
 
     private init() {
         let appSupport = FileManager.default.urls(
@@ -23,9 +24,12 @@ public actor RecommendationEngine {
         await store.ensureFeatures(for: urls, using: extractor)
     }
 
-    /// Returns the URLs of the `count` most similar songs to `url` (Step 4 — not yet implemented).
+    /// Returns the URLs of the `count` most similar songs to `url`, ranked by similarity.
     public func recommendations(for url: URL, count: Int = 10) async -> [URL] {
-        return []
+        let all = await store.allFeatures()
+        guard let seed = all.first(where: { $0.songURL == url }) else { return [] }
+        return similarity.recommendations(for: seed, from: all, count: count)
+            .map(\.songURL)
     }
 
     /// Returns all cached feature entries — used for debug inspection.

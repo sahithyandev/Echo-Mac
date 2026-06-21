@@ -3,6 +3,7 @@ import EchoCore
 
 struct PlayerControlsView: View {
     @ObservedObject var playerViewModel: AudioPlayerViewModel
+    var onInfoTap: () -> Void = {}
     @State private var isScrubbing = false
     @State private var scrubProgress: Double = 0
 
@@ -13,25 +14,30 @@ struct PlayerControlsView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                if let song = playerViewModel.nowPlaying {
-                    SongArtworkView(song: song, size: 40)
-                }
+                Button { onInfoTap() } label: {
+                    HStack(spacing: 10) {
+                        if let song = playerViewModel.nowPlaying {
+                            SongArtworkView(song: song, size: 40)
+                        }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(playerViewModel.nowPlaying?.title ?? "")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(playerViewModel.nowPlaying?.title ?? "")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
 
-                    if let detail = playerViewModel.nowPlaying.flatMap(subtitle) {
-                        Text(detail)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+                            if let detail = playerViewModel.nowPlaying.flatMap(subtitle) {
+                                Text(detail)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+                        }
                     }
                 }
+                .buttonStyle(.plain)
 
                 Spacer()
 

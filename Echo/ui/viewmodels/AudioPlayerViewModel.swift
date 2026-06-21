@@ -10,10 +10,11 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var progress: Double = 0
     @Published var timeRemaining: TimeInterval = 0
     @Published var duration: TimeInterval = 0
+    @Published var recommendations: [Song] = []
 
     private let player = AudioPlayer()
     private let systemControls = NowPlayingService()
-    private var queue: [Song] = []
+    private(set) var queue: [Song] = []
     private var currentIndex: Int?
     private var progressTimer: Timer?
 
@@ -56,11 +57,18 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         } catch {
             print("Error playing \(song.title): \(error)")
         }
+        recommendations = []
+        let songURL = song.url
+        let currentQueue = self.queue
+        Task {
+            let urls = await RecommendationEngine.shared.recommendations(for: songURL, count: 6)
+            recommendations = urls.compactMap { url in currentQueue.first { $0.url == url } }
+        }
+
         #if DEBUG
         debugFeatures = nil
-        let url = song.url
         Task {
-            debugFeatures = try? await featureExtractor.extract(from: url)
+            debugFeatures = try? await featureExtractor.extract(from: songURL)
         }
         #endif
     }
