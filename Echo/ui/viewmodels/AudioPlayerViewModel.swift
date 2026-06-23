@@ -19,6 +19,9 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var progressTimer: Timer?
     private var lastSongCompleted = false
     private var trackedMilestones = Set<Int>()
+    // Wakatime-style: diff the engine's clock each tick; only real playback advances it
+    private var listenAnchor: TimeInterval = 0
+    private var listenAccrued: Double = 0
 
     var canPlayPrev: Bool { (currentIndex ?? 0) > 0 }
     var canPlayNext: Bool {
@@ -39,6 +42,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         guard flag else { return }
         Task { @MainActor in
             self.lastSongCompleted = true
+            self.flushListening()
             if let song = self.nowPlaying {
                 AnalyticsService.track(event: "complete", song: song, progress: 1.0)
             }
@@ -47,6 +51,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func play(_ song: Song, in queue: [Song] = []) {
+        flushListening()
         if let current = nowPlaying, !lastSongCompleted {
             AnalyticsService.track(event: "skip", song: current, progress: progress)
         }
@@ -80,6 +85,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if player.isPlaying {
             player.pause()
             isPlaying = false
+            flushListening()
             if let song = nowPlaying { AnalyticsService.track(event: "pause", song: song, progress: progress) }
         } else {
             player.resume()
@@ -109,6 +115,8 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         progressTimer?.invalidate()
         progress = 0
         trackedMilestones = []
+        listenAnchor = player.currentTime
+        listenAccrued = 0
         progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
@@ -118,6 +126,15 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 self.timeRemaining = max(0, duration - self.player.currentTime)
                 self.updateSystemNowPlaying()
                 self.checkMilestones()
+                // Accumulate only real playback time: diff the engine clock each tick.
+                // Gate: forward-only, under 1.5s (seeks produce large jumps, pauses produce 0).
+                let now = self.player.currentTime
+                let delta = now - self.listenAnchor
+                self.listenAnchor = now
+                if self.isPlaying, delta > 0, delta < 1.5 {
+                    self.listenAccrued += delta
+                    if self.listenAccrued >= 30 { self.flushListening() } // ponytail: flush every 30s; lose ≤30s on crash
+                }
             }
         }
     }
@@ -129,6 +146,12 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             trackedMilestones.insert(milestone)
             AnalyticsService.track(event: "milestone_\(milestone)", song: song, progress: progress)
         }
+    }
+
+    private func flushListening() {
+        guard listenAccrued > 0, let song = nowPlaying else { return }
+        AnalyticsService.logListening(song: song, seconds: listenAccrued)
+        listenAccrued = 0
     }
 
     func toggleShuffle() {
