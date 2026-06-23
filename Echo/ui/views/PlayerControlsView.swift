@@ -43,6 +43,15 @@ struct PlayerControlsView: View {
 
                 HStack(spacing: 8) {
                     Button {
+                        playerViewModel.toggleShuffle()
+                    } label: {
+                        Image(systemName: "shuffle")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(playerViewModel.isShuffled ? AnyShapeStyle(AppColor.accent) : AnyShapeStyle(.primary.opacity(0.4)))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
                         playerViewModel.playPrev()
                     } label: {
                         Image(systemName: "backward.fill")

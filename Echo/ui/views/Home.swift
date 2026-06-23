@@ -38,8 +38,12 @@ struct Home: View {
             }
 
             if playerViewModel.nowPlaying != nil {
-                PlayerControlsView(playerViewModel: playerViewModel)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    PlayerControlsView(playerViewModel: playerViewModel)
+                        .frame(width: 560)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
     }

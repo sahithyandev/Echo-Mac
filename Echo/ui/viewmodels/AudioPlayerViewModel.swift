@@ -10,9 +10,11 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var progress: Double = 0
     @Published var timeRemaining: TimeInterval = 0
     @Published var duration: TimeInterval = 0
+    @Published var isShuffled: Bool = false
     private let player = AudioPlayer()
     private let systemControls = NowPlayingService()
     private(set) var queue: [Song] = []
+    private var originalQueue: [Song] = []
     private var currentIndex: Int?
     private var progressTimer: Timer?
     private var lastSongCompleted = false
@@ -51,8 +53,16 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         lastSongCompleted = false
 
         if !queue.isEmpty {
-            self.queue = queue
-            self.currentIndex = queue.firstIndex(where: { $0.id == song.id })
+            self.originalQueue = queue
+            if isShuffled {
+                var rest = queue.filter { $0.id != song.id }
+                rest.shuffle()
+                self.queue = [song] + rest
+                self.currentIndex = 0
+            } else {
+                self.queue = queue
+                self.currentIndex = queue.firstIndex(where: { $0.id == song.id })
+            }
         }
         do {
             try player.play(song)
@@ -118,6 +128,20 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         for milestone in [25, 50, 75] where pct >= milestone && !trackedMilestones.contains(milestone) {
             trackedMilestones.insert(milestone)
             AnalyticsService.track(event: "milestone_\(milestone)", song: song, progress: progress)
+        }
+    }
+
+    func toggleShuffle() {
+        isShuffled.toggle()
+        guard let current = nowPlaying else { return }
+        if isShuffled {
+            var rest = originalQueue.filter { $0.id != current.id }
+            rest.shuffle()
+            queue = [current] + rest
+            currentIndex = 0
+        } else {
+            queue = originalQueue
+            currentIndex = originalQueue.firstIndex(where: { $0.id == current.id })
         }
     }
 
