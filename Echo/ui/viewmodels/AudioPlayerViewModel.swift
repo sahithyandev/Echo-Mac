@@ -17,6 +17,8 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private(set) var queue: [Song] = []
     private var currentIndex: Int?
     private var progressTimer: Timer?
+    private var lastSongCompleted = false
+    private var trackedMilestones = Set<Int>()
 
     #if DEBUG
     @Published var debugFeatures: TrackFeatures?
@@ -40,10 +42,21 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         guard flag else { return }
-        Task { @MainActor in self.playNext() }
+        Task { @MainActor in
+            self.lastSongCompleted = true
+            if let song = self.nowPlaying {
+                AnalyticsService.track(event: "complete", song: song, progress: 1.0)
+            }
+            self.playNext()
+        }
     }
 
     func play(_ song: Song, in queue: [Song] = []) {
+        if let current = nowPlaying, !lastSongCompleted {
+            AnalyticsService.track(event: "skip", song: current, progress: progress)
+        }
+        lastSongCompleted = false
+
         if !queue.isEmpty {
             self.queue = queue
             self.currentIndex = queue.firstIndex(where: { $0.id == song.id })
@@ -57,6 +70,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         } catch {
             print("Error playing \(song.title): \(error)")
         }
+        AnalyticsService.track(event: "play", song: song, progress: 0.0)
         recommendations = []
         let songURL = song.url
         let currentQueue = self.queue
@@ -77,9 +91,11 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if player.isPlaying {
             player.pause()
             isPlaying = false
+            if let song = nowPlaying { AnalyticsService.track(event: "pause", song: song, progress: progress) }
         } else {
             player.resume()
             isPlaying = true
+            if let song = nowPlaying { AnalyticsService.track(event: "resume", song: song, progress: progress) }
         }
         updateSystemNowPlaying()
     }
@@ -103,6 +119,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private func startProgressTimer() {
         progressTimer?.invalidate()
         progress = 0
+        trackedMilestones = []
         progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
@@ -111,7 +128,17 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 self.progress = duration > 0 ? self.player.currentTime / duration : 0
                 self.timeRemaining = max(0, duration - self.player.currentTime)
                 self.updateSystemNowPlaying()
+                self.checkMilestones()
             }
+        }
+    }
+
+    private func checkMilestones() {
+        guard let song = nowPlaying else { return }
+        let pct = Int(progress * 100)
+        for milestone in [25, 50, 75] where pct >= milestone && !trackedMilestones.contains(milestone) {
+            trackedMilestones.insert(milestone)
+            AnalyticsService.track(event: "milestone_\(milestone)", song: song, progress: progress)
         }
     }
 
