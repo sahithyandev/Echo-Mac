@@ -18,10 +18,6 @@ struct NowPlayingView: View {
                 songInfo
                 scrubber
                 playbackControls
-
-                if !playerViewModel.recommendations.isEmpty {
-                    similarSongs
-                }
             }
             .padding(.horizontal, 28)
             .padding(.vertical, 32)
@@ -146,49 +142,6 @@ struct NowPlayingView: View {
             .disabled(!playerViewModel.canPlayNext)
         }
     }
-
-    private var similarSongs: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Similar Songs")
-                .font(.headline)
-                .padding(.bottom, 12)
-
-            ForEach(Array(playerViewModel.recommendations.enumerated()), id: \.element.id) { index, song in
-                VStack(spacing: 0) {
-                    if index > 0 { Divider() }
-
-                    HStack(spacing: 10) {
-                        SongArtworkView(song: song, size: 40)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(song.title)
-                                .font(.system(size: 13, weight: .medium))
-                                .lineLimit(1)
-                            if let detail = subtitle(for: song) {
-                                Text(detail)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "play.circle")
-                            .font(.system(size: 20))
-                            .foregroundStyle(AppColor.accent)
-                    }
-                    .padding(.vertical, 8)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        playerViewModel.play(song, in: playerViewModel.queue)
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Helpers
 
     private func subtitle(for song: Song) -> String? {
         switch (song.artist, song.album) {

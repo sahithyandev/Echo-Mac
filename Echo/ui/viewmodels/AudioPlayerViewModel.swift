@@ -10,8 +10,6 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var progress: Double = 0
     @Published var timeRemaining: TimeInterval = 0
     @Published var duration: TimeInterval = 0
-    @Published var recommendations: [Song] = []
-
     private let player = AudioPlayer()
     private let systemControls = NowPlayingService()
     private(set) var queue: [Song] = []
@@ -19,11 +17,6 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var progressTimer: Timer?
     private var lastSongCompleted = false
     private var trackedMilestones = Set<Int>()
-
-    #if DEBUG
-    @Published var debugFeatures: TrackFeatures?
-    private let featureExtractor = FeatureExtractor()
-    #endif
 
     var canPlayPrev: Bool { (currentIndex ?? 0) > 0 }
     var canPlayNext: Bool {
@@ -71,20 +64,6 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             print("Error playing \(song.title): \(error)")
         }
         AnalyticsService.track(event: "play", song: song, progress: 0.0)
-        recommendations = []
-        let songURL = song.url
-        let currentQueue = self.queue
-        Task {
-            let urls = await RecommendationEngine.shared.recommendations(for: songURL, count: 6)
-            recommendations = urls.compactMap { url in currentQueue.first { $0.url == url } }
-        }
-
-        #if DEBUG
-        debugFeatures = nil
-        Task {
-            debugFeatures = try? await featureExtractor.extract(from: songURL)
-        }
-        #endif
     }
 
     func togglePlayPause() {
