@@ -74,7 +74,6 @@
    </AnalyzeAction>
    <ArchiveAction
       buildConfiguration = "Release"
-      customArchiveName = "Echo"
       revealArchiveInOrganizer = "YES">
    </ArchiveAction>
 </Scheme>
