@@ -24,6 +24,9 @@ struct Root : View {
                         .tag(Page.nowPlaying)
                 }
 
+                Label("Stats", systemImage: "chart.bar")
+                    .tag(Page.stats)
+
                 Label("Settings", systemImage: "gear")
                     .tag(Page.settings)
             }
@@ -31,6 +34,8 @@ struct Root : View {
             switch navigationState.currentPage {
             case .nowPlaying:
                 NowPlayingView(playerViewModel: playerViewModel)
+            case .stats:
+                StatsView()
             case .settings:
                 Settings()
             default:

@@ -1,6 +1,14 @@
 import Foundation
 import EchoCore
 
+struct AnalyticsEvent: Codable {
+    let event: String
+    let songPath: String
+    let title: String
+    let progress: Double
+    let timestamp: Double
+}
+
 enum AnalyticsService {
     private static let fileURL: URL = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -9,16 +17,16 @@ enum AnalyticsService {
         return dir.appendingPathComponent("analytics.jsonl")
     }()
 
-    private struct Event: Encodable {
-        let event: String
-        let songPath: String
-        let title: String
-        let progress: Double
-        let timestamp: Double
+    static func loadAll() -> [AnalyticsEvent] {
+        guard let text = try? String(contentsOf: fileURL, encoding: .utf8) else { return [] }
+        let decoder = JSONDecoder()
+        return text.split(separator: "\n").compactMap {
+            try? decoder.decode(AnalyticsEvent.self, from: Data($0.utf8))
+        }
     }
 
     static func track(event: String, song: Song, progress: Double) {
-        let e = Event(
+        let e = AnalyticsEvent(
             event: event,
             songPath: song.url.lastPathComponent,
             title: song.title,

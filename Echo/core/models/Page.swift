@@ -10,6 +10,7 @@ import Foundation
 enum Page: Hashable {
     case home
     case nowPlaying
+    case stats
     case settings
 }
 
