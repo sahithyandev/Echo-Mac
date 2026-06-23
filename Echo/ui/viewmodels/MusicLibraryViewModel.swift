@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import AVFoundation
 import Combine
 import EchoCore
@@ -37,8 +38,10 @@ class MusicLibraryViewModel: ObservableObject {
     }
 
     private func loadMetadata() async {
-        for i in songs.indices {
-            let url = songs[i].url
+        // ponytail: mutate a local copy so songs is published once, not once per song
+        var updated = songs
+        for i in updated.indices {
+            let url = updated[i].url
             let asset = AVURLAsset(url: url)
             guard let items = try? await asset.load(.commonMetadata) else { continue }
 
@@ -54,14 +57,19 @@ class MusicLibraryViewModel: ObservableObject {
                     artist = try? await item.load(.stringValue)
                 case .commonKeyAlbumName:
                     album = try? await item.load(.stringValue)
+                case .commonKeyArtwork:
+                    if let data = try? await item.load(.dataValue), let image = NSImage(data: data) {
+                        ArtworkCache.shared.set(image, for: url)
+                    }
                 default:
                     break
                 }
             }
 
-            if let title { songs[i].title = title }
-            songs[i].artist = artist
-            songs[i].album = album
+            if let title { updated[i].title = title }
+            updated[i].artist = artist
+            updated[i].album = album
         }
+        songs = updated
     }
 }

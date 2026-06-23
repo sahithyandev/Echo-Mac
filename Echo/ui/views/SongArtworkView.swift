@@ -3,6 +3,19 @@ import AVFoundation
 import AppKit
 import EchoCore
 
+// ponytail: limits concurrent AVURLAsset disk reads to prevent I/O contention on initial load
+private actor LoadThrottle {
+    static let shared = LoadThrottle(4)
+    private var slots: Int
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    init(_ n: Int) { slots = n }
+    func acquire() async {
+        guard slots > 0 else { await withCheckedContinuation { waiters.append($0) }; return }
+        slots -= 1
+    }
+    func release() { waiters.isEmpty ? (slots += 1) : waiters.removeFirst().resume() }
+}
+
 struct SongArtworkView: View {
     let song: Song
     let size: CGFloat
@@ -33,12 +46,18 @@ struct SongArtworkView: View {
     }
 
     private func loadArtwork(from url: URL) async -> NSImage? {
+        if let cached = ArtworkCache.shared.get(url) { return cached }
+        await LoadThrottle.shared.acquire()
+        defer { Task { await LoadThrottle.shared.release() } }
+        if let cached = ArtworkCache.shared.get(url) { return cached }  // re-check after queuing
         let asset = AVURLAsset(url: url)
         guard let items = try? await asset.load(.commonMetadata) else { return nil }
         for item in items {
             guard item.commonKey == .commonKeyArtwork else { continue }
             guard let data = try? await item.load(.dataValue) else { continue }
-            return NSImage(data: data)
+            guard let image = NSImage(data: data) else { continue }
+            ArtworkCache.shared.set(image, for: url)
+            return image
         }
         return nil
     }
