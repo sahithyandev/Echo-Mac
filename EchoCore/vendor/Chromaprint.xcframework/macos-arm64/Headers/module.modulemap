@@ -1,0 +1,4 @@
+module CChromaprint {
+    header "chromaprint.h"
+    export *
+}
