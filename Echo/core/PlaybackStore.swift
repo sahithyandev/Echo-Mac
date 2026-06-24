@@ -422,9 +422,81 @@ enum PlaybackStore {
         }
     }
 
+    static func libraryCounts() -> (songs: Int, artists: Int, albums: Int) {
+        queue.sync {
+            guard let db else { return (0, 0, 0) }
+            var songs = 0, albums = 0
+            var artistTags: [String] = []
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, """
+                SELECT
+                    COUNT(*),
+                    COUNT(DISTINCT CASE WHEN album IS NOT NULL AND album <> '' THEN album END)
+                FROM songs
+            """, -1, &stmt, nil) == SQLITE_OK, sqlite3_step(stmt) == SQLITE_ROW {
+                songs  = Int(sqlite3_column_int(stmt, 0))
+                albums = Int(sqlite3_column_int(stmt, 1))
+            }
+            sqlite3_finalize(stmt)
+            var aStmt: OpaquePointer?
+            if sqlite3_prepare_v2(db,
+                "SELECT artist FROM songs WHERE artist IS NOT NULL AND artist <> ''",
+                -1, &aStmt, nil) == SQLITE_OK {
+                while sqlite3_step(aStmt) == SQLITE_ROW {
+                    artistTags.append(String(cString: sqlite3_column_text(aStmt, 0)))
+                }
+            }
+            sqlite3_finalize(aStmt)
+            let distinctArtists = Set(artistTags.flatMap { splitArtists($0) })
+            return (songs, distinctArtists.count, albums)
+        }
+    }
+
+    // Splits a combined artist tag ("A, B & C") into individual artist names.
+    // ponytail: false-positives on names with literal "," or "&" (e.g. "Earth, Wind & Fire");
+    // add an allowlist only if that becomes a real problem.
+    static func splitArtists(_ raw: String) -> [String] {
+        raw.components(separatedBy: CharacterSet(charactersIn: ",&"))
+           .map { $0.trimmingCharacters(in: .whitespaces) }
+           .filter { !$0.isEmpty }
+    }
+
     // Top groups by song dimension attribute — used by StatsView ranked lists.
-    // HAVING >= 3600 and LIMIT 10 so callers get display-ready results.
-    static func topByArtist() -> [(name: String, seconds: Double)] { topByAttribute("artist") }
+    static func topByArtist() -> [(name: String, seconds: Double)] {
+        // Fetch raw per-tag totals, then split and re-aggregate so collaborators
+        // (e.g. "A & B") each get credit individually.
+        let rawRows: [(artist: String, seconds: Double)] = queue.sync {
+            guard let db else { return [] }
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, """
+                SELECT s.artist, SUM(l.seconds) AS total
+                FROM listening l JOIN songs s ON s.id = l.song_id
+                WHERE s.artist IS NOT NULL AND s.artist <> ''
+                GROUP BY s.artist
+            """, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            var rows: [(artist: String, seconds: Double)] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                rows.append((
+                    artist:  String(cString: sqlite3_column_text(stmt, 0)),
+                    seconds: sqlite3_column_double(stmt, 1)
+                ))
+            }
+            sqlite3_finalize(stmt)
+            return rows
+        }
+        var totals: [String: Double] = [:]
+        for row in rawRows {
+            for artist in splitArtists(row.artist) {
+                totals[artist, default: 0] += row.seconds
+            }
+        }
+        return totals
+            .filter { $0.value >= 3600 }
+            .sorted { $0.value > $1.value }
+            .prefix(10)
+            .map { (name: $0.key, seconds: $0.value) }
+    }
+
     static func topByAlbum()  -> [(name: String, seconds: Double)] { topByAttribute("album")  }
     static func topByYear()   -> [(name: String, seconds: Double)] { topByAttribute("year")   }
     static func topByGenre()  -> [(name: String, seconds: Double)] { topByAttribute("genre")  }

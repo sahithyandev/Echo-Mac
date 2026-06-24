@@ -3,6 +3,7 @@ import Charts
 
 struct StatsView: View {
     @State private var totals: (today: Double, week: Double, allTime: Double) = (0, 0, 0)
+    @State private var counts: (songs: Int, artists: Int, albums: Int) = (0, 0, 0)
     @State private var byDay: [DayPoint] = []
     @State private var topArtists: [(name: String, seconds: Double)] = []
     @State private var topAlbums:  [(name: String, seconds: Double)] = []
@@ -24,17 +25,29 @@ struct StatsView: View {
                 if !topAlbums.isEmpty  { rankedList(title: "Albums",  rows: topAlbums) }
                 if !topYears.isEmpty   { rankedList(title: "Years",   rows: topYears) }
                 if !topGenres.isEmpty  { rankedList(title: "Genres",  rows: topGenres) }
+                if counts.songs > 0   { libraryFooter }
             }
             .padding(AppSpacing.lg)
         }
         .navigationTitle("Stats")
         .task {
-            totals    = PlaybackStore.listeningTotals()
+            counts    = PlaybackStore.libraryCounts()
+        totals    = PlaybackStore.listeningTotals()
             byDay     = makeDayPoints(PlaybackStore.listeningByDay().reversed())
             topArtists = PlaybackStore.topByArtist()
             topAlbums  = PlaybackStore.topByAlbum()
             topYears   = PlaybackStore.topByYear()
             topGenres  = PlaybackStore.topByGenre()
+        }
+    }
+
+    // MARK: - Library footer
+
+    private var libraryFooter: some View {
+        HStack(spacing: AppSpacing.xl) {
+            miniStat(label: "Songs",   value: "\(counts.songs)")
+            miniStat(label: "Artists", value: "\(counts.artists)")
+            miniStat(label: "Albums",  value: "\(counts.albums)")
         }
     }
 
