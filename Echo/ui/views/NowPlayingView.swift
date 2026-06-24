@@ -4,32 +4,31 @@ import EchoCore
 struct NowPlayingView: View {
     @ObservedObject var playerViewModel: AudioPlayerViewModel
 
-    @State private var isScrubbing = false
-    @State private var scrubProgress: Double = 0
-
-    private var displayedProgress: Double {
-        isScrubbing ? scrubProgress : playerViewModel.progress
-    }
-
     var body: some View {
         ScrollView {
-            VStack(spacing: 28) {
+            VStack(spacing: AppSpacing.lg) {
                 artwork
                 songInfo
-                scrubber
+                Scrubber(
+                    progress: playerViewModel.progress,
+                    duration: playerViewModel.duration,
+                    onSeek: { playerViewModel.seek(to: $0) }
+                )
                 playbackControls
             }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 32)
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.vertical, AppSpacing.xl)
         }
         .frame(minWidth: 400)
     }
+
+    // MARK: - Subviews
 
     private var artwork: some View {
         Group {
             if let song = playerViewModel.nowPlaying {
                 SongArtworkView(song: song, size: 220)
-                    .shadow(color: .black.opacity(0.25), radius: 20, x: 0, y: 8)
+                    .shadow(color: .black.opacity(0.3), radius: 24, x: 0, y: 10)
             }
         }
     }
@@ -37,12 +36,12 @@ struct NowPlayingView: View {
     private var songInfo: some View {
         VStack(spacing: 5) {
             Text(playerViewModel.nowPlaying?.title ?? "")
-                .font(.title3.bold())
+                .font(.appTitle)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
 
-            if let song = playerViewModel.nowPlaying, let detail = subtitle(for: song) {
-                Text(detail)
+            if let song = playerViewModel.nowPlaying, let sub = subtitle(for: song) {
+                Text(sub)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -51,66 +50,17 @@ struct NowPlayingView: View {
         }
     }
 
-    private var scrubber: some View {
-        VStack(spacing: 6) {
-            GeometryReader { geo in
-                let trackWidth = geo.size.width
-                let fillWidth = (trackWidth * displayedProgress).clamped(to: 0...trackWidth)
-
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(.primary.opacity(0.12))
-                        .frame(height: 4)
-                    Capsule()
-                        .fill(AppColor.accent)
-                        .frame(width: max(fillWidth, 0), height: 4)
-                        .animation(isScrubbing ? nil : .linear(duration: 0.5), value: displayedProgress)
-
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 14, height: 14)
-                        .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
-                        .offset(x: fillWidth - 7)
-                        .scaleEffect(isScrubbing ? 1.2 : 1)
-                        .animation(.easeInOut(duration: 0.15), value: isScrubbing)
-                }
-                .frame(height: 14)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            scrubProgress = (value.location.x / trackWidth).clamped(to: 0...1)
-                            isScrubbing = true
-                        }
-                        .onEnded { value in
-                            let fraction = (value.location.x / trackWidth).clamped(to: 0...1)
-                            playerViewModel.seek(to: fraction * playerViewModel.duration)
-                            isScrubbing = false
-                        }
-                )
-            }
-            .frame(height: 14)
-
-            HStack {
-                Text(formatTime(isScrubbing
-                    ? playerViewModel.duration * scrubProgress
-                    : playerViewModel.duration - playerViewModel.timeRemaining))
-                    .font(.system(size: 11).monospacedDigit())
-                    .foregroundStyle(.tertiary)
-
-                Spacer()
-
-                Text("-" + formatTime(isScrubbing
-                    ? playerViewModel.duration * (1 - scrubProgress)
-                    : playerViewModel.timeRemaining))
-                    .font(.system(size: 11).monospacedDigit())
-                    .foregroundStyle(.tertiary)
-            }
-        }
-    }
-
     private var playbackControls: some View {
-        HStack(spacing: 44) {
+        HStack(spacing: 36) {
+            Button { playerViewModel.toggleShuffle() } label: {
+                Image(systemName: "shuffle")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(playerViewModel.isShuffled
+                        ? AnyShapeStyle(AppColor.accent)
+                        : AnyShapeStyle(.primary.opacity(0.3)))
+            }
+            .buttonStyle(.plain)
+
             Button { playerViewModel.playPrev() } label: {
                 Image(systemName: "backward.fill")
                     .font(.system(size: 22, weight: .semibold))
@@ -125,9 +75,10 @@ struct NowPlayingView: View {
                 Image(systemName: playerViewModel.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 26, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 60, height: 60)
+                    .frame(width: 64, height: 64)
                     .background(AppColor.accent)
                     .clipShape(Circle())
+                    .shadow(color: AppColor.accent.opacity(0.4), radius: 12, x: 0, y: 4)
             }
             .buttonStyle(.plain)
 
@@ -152,14 +103,4 @@ struct NowPlayingView: View {
         }
     }
 
-    private func formatTime(_ seconds: TimeInterval) -> String {
-        let s = max(0, Int(seconds))
-        return String(format: "%d:%02d", s / 60, s % 60)
-    }
-}
-
-private extension Comparable {
-    func clamped(to range: ClosedRange<Self>) -> Self {
-        min(max(self, range.lowerBound), range.upperBound)
-    }
 }

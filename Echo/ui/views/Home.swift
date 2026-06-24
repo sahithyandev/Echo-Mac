@@ -6,54 +6,59 @@ struct Home: View {
     @ObservedObject var playerViewModel: AudioPlayerViewModel
     @AppStorage("libraryDirectory") var libraryDirectory: String = "/Users/\(NSUserName())/Music"
 
+    @State private var searchText = ""
+
+    private var filtered: [Song] {
+        guard !searchText.isEmpty else { return libraryViewModel.songs }
+        let q = searchText
+        return libraryViewModel.songs.filter {
+            $0.title.localizedCaseInsensitiveContains(q)
+            || ($0.artist?.localizedCaseInsensitiveContains(q) == true)
+            || ($0.album?.localizedCaseInsensitiveContains(q) == true)
+        }
+    }
+
     var body: some View {
-        ZStack(alignment: .bottom) {
-            List(libraryViewModel.songs) { song in
-                HStack(spacing: 10) {
-                    SongArtworkView(song: song, size: 44)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(song.title)
-                            .font(.system(size: 13, weight: .medium))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-
-                        if let detail = subtitle(for: song) {
-                            Text(detail)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                        }
-                    }
-                }
-                .onTapGesture {
-                    withAnimation(.spring()) {
-                        playerViewModel.play(song, in: libraryViewModel.songs)
-                    }
-                }
-            }
+        songContent
+            .background(AppColor.background.ignoresSafeArea())
+            .searchable(text: $searchText, prompt: "Search songs, artists, albums")
             .onAppear {
                 libraryViewModel.load(from: URL(fileURLWithPath: libraryDirectory))
             }
+    }
 
-            if playerViewModel.nowPlaying != nil {
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    PlayerControlsView(playerViewModel: playerViewModel)
-                        .frame(width: 560)
+    // MARK: - Song List
+
+    @ViewBuilder
+    private var songContent: some View {
+        if let error = libraryViewModel.errorMessage {
+            ContentUnavailableView(
+                "Couldn't load library",
+                systemImage: "exclamationmark.triangle",
+                description: Text(error)
+            )
+        } else if libraryViewModel.songs.isEmpty {
+            ContentUnavailableView(
+                "No songs",
+                systemImage: "music.note",
+                description: Text("Add MP3 files to your Music folder or choose another folder in Settings.")
+            )
+        } else if filtered.isEmpty {
+            ContentUnavailableView.search(text: searchText)
+        } else {
+            List(filtered) { song in
+                SongRow(song: song)
+                .onTapGesture {
+                    withAnimation(.spring()) {
+                        playerViewModel.play(song, in: filtered)
+                    }
                 }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
     }
 
-    private func subtitle(for song: Song) -> String? {
-        switch (song.artist, song.album) {
-        case (let artist?, let album?): return "\(artist) — \(album)"
-        case (let artist?, nil):        return artist
-        case (nil, let album?):         return album
-        case (nil, nil):                return nil
-        }
-    }
 }

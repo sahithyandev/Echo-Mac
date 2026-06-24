@@ -1,10 +1,3 @@
-//
-//  Settings.swift
-//  Echo
-//
-//  Created by Sahithyan Kandathasan on 2026-06-18.
-//
-
 import SwiftUI
 
 struct Settings: View {
@@ -19,9 +12,7 @@ struct Settings: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                        Button("Choose…") {
-                            pickFolder()
-                        }
+                        Button("Choose…") { pickFolder() }
                     }
                 }
             }
@@ -29,6 +20,8 @@ struct Settings: View {
         .formStyle(.grouped)
         .navigationTitle("Settings")
         .frame(minWidth: 400)
+        // Tint is inherited from Root; explicit here for the preview
+        .tint(AppColor.accent)
     }
 
     private func pickFolder() {
@@ -37,7 +30,6 @@ struct Settings: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Select"
-
         if panel.runModal() == .OK, let url = panel.url {
             libraryPath = url.path
         }

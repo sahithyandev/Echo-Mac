@@ -1,19 +1,12 @@
-//
-//  Root.swift
-//  Echo
-//
-//  Created by Sahithyan Kandathasan on 2026-06-18.
-//
-
 import Foundation
 import SwiftUI
 
-struct Root : View {
+struct Root: View {
     @EnvironmentObject private var navigationState: AppNavigationState
     @EnvironmentObject private var libraryViewModel: MusicLibraryViewModel
     @EnvironmentObject private var playerViewModel: AudioPlayerViewModel
 
-    var body : some View {
+    var body: some View {
         NavigationSplitView {
             List(selection: $navigationState.currentPage) {
                 Label("Home", systemImage: "music.note.house")
@@ -42,25 +35,19 @@ struct Root : View {
                 Home(libraryViewModel: libraryViewModel, playerViewModel: playerViewModel)
             }
         }
+        // Wire our #FF3366 accent through the whole view hierarchy:
+        // sidebar selection tint, button defaults, progress fills.
+        .tint(AppColor.accent)
         .safeAreaInset(edge: .bottom) {
             if playerViewModel.nowPlaying != nil && navigationState.currentPage != .nowPlaying {
                 PlayerControlsView(playerViewModel: playerViewModel) {
                     navigationState.currentPage = .nowPlaying
                 }
-                .transition(.move(edge: .bottom))
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .onChange(of: playerViewModel.nowPlaying) { _, song in
-            if song != nil {
-                navigationState.currentPage = .nowPlaying
-            } else {
-                navigationState.currentPage = .home
-            }
-        }
+        // Removed: the forced auto-navigation to Now Playing on every play.
+        // The mini-player is the bridge — users stay where they are and
+        // tap it to expand into the full Now Playing screen.
     }
-
-}
-
-#Preview {
-    Root()
 }

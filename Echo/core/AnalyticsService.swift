@@ -169,6 +169,44 @@ enum AnalyticsService {
         }
     }
 
+    // Returns per-song daily listening seconds for the last `days` days,
+    // zero-filled so every song's array has exactly `days` entries (oldest → newest).
+    // One query covers all songs — callers don't need N separate fetches.
+    static func listeningDaysBySong(days: Int = 14) -> [String: [Double]] {
+        let today = Date()
+        let cal = Calendar.current
+        // Build the ordered list of day-string buckets (oldest first)
+        let dayKeys: [String] = (0..<days).reversed().compactMap { offset in
+            cal.date(byAdding: .day, value: -offset, to: today).map { dayFormatter.string(from: $0) }
+        }
+        guard let oldest = dayKeys.first else { return [:] }
+
+        return queue.sync {
+            guard let db else { return [:] }
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, """
+                SELECT song_path, day, SUM(seconds)
+                FROM listening
+                WHERE day >= ?
+                GROUP BY song_path, day
+            """, -1, &stmt, nil) == SQLITE_OK else { return [:] }
+            sqlite3_bind_text(stmt, 1, oldest, -1, TRANSIENT)
+
+            // raw[songPath][day] = seconds
+            var raw: [String: [String: Double]] = [:]
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let path = String(cString: sqlite3_column_text(stmt, 0))
+                let day  = String(cString: sqlite3_column_text(stmt, 1))
+                let secs = sqlite3_column_double(stmt, 2)
+                raw[path, default: [:]][day] = secs
+            }
+            sqlite3_finalize(stmt)
+
+            // Pivot: fill zeros for days with no listening so arrays are fixed-length
+            return raw.mapValues { dayMap in dayKeys.map { dayMap[$0] ?? 0.0 } }
+        }
+    }
+
     static func songStats() -> [SongStat] {
         queue.sync {
             guard let db else { return [] }
