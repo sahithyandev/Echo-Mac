@@ -64,6 +64,14 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     }
 
+    func updateLibrary(_ songs: [Song]) {
+        let byURL = Dictionary(uniqueKeysWithValues: songs.map { ($0.url, $0) })
+        originalQueue = originalQueue.map { byURL[$0.url] ?? $0 }
+        queue = queue.map { byURL[$0.url] ?? $0 }
+        recommendations = recommendations.map { byURL[$0.url] ?? $0 }
+        if let np = nowPlaying, let updated = byURL[np.url] { nowPlaying = updated }
+    }
+
     func play(_ song: Song, in queue: [Song] = []) {
         flushListening()
         if let current = nowPlaying, !lastSongCompleted {

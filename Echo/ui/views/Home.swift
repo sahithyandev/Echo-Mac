@@ -30,6 +30,9 @@ struct Home: View {
         }
         .background(AppColor.background.ignoresSafeArea())
         .searchable(text: $searchText, prompt: "Search songs, artists, albums")
+        .onChange(of: libraryViewModel.songs) { _, songs in
+            playerViewModel.updateLibrary(songs)
+        }
         .onAppear {
             libraryViewModel.load(from: URL(fileURLWithPath: libraryDirectory))
             playerViewModel.loadInitialRecommendations(from: libraryViewModel.songs)
