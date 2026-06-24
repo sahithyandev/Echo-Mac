@@ -3,7 +3,8 @@ import SQLite3
 import EchoCore
 
 struct SongStat {
-    let songPath: String
+    // stable_id when available, filename fallback for pre-migration rows
+    let id: String
     let title: String
     let plays: Int
     let skips: Int
@@ -11,7 +12,8 @@ struct SongStat {
 }
 
 struct ListeningStat {
-    let songPath: String
+    // stable_id when available, filename fallback for pre-migration rows
+    let id: String
     let title: String
     let seconds: Double
 }
@@ -54,10 +56,16 @@ enum AnalyticsService {
                 timestamp REAL    NOT NULL
             )
         """, nil, nil, nil)
+        // Additive migration: add stable_id column if not present.
+        // sqlite3_exec ignores the error if the column already exists.
+        sqlite3_exec(db, "ALTER TABLE events   ADD COLUMN stable_id TEXT", nil, nil, nil)
+        sqlite3_exec(db, "ALTER TABLE listening ADD COLUMN stable_id TEXT", nil, nil, nil)
         return db
     }()
 
-    static func track(event: String, song: Song, progress: Double) {
+    // MARK: - Writes
+
+    static func track(event: String, song: Song, progress: Double, stableId: String? = nil) {
         let songPath = song.url.lastPathComponent
         let title = song.title
         let p = round(progress * 1000) / 1000
@@ -66,19 +74,24 @@ enum AnalyticsService {
             guard let db else { return }
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db,
-                "INSERT INTO events (event,song_path,title,progress,timestamp) VALUES (?,?,?,?,?)",
+                "INSERT INTO events (event,song_path,title,progress,timestamp,stable_id) VALUES (?,?,?,?,?,?)",
                 -1, &stmt, nil) == SQLITE_OK else { return }
             sqlite3_bind_text(stmt, 1, event,    -1, TRANSIENT)
             sqlite3_bind_text(stmt, 2, songPath, -1, TRANSIENT)
             sqlite3_bind_text(stmt, 3, title,    -1, TRANSIENT)
             sqlite3_bind_double(stmt, 4, p)
             sqlite3_bind_double(stmt, 5, ts)
+            if let sid = stableId {
+                sqlite3_bind_text(stmt, 6, sid, -1, TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 6)
+            }
             sqlite3_step(stmt)
             sqlite3_finalize(stmt)
         }
     }
 
-    static func logListening(song: Song, seconds: Double) {
+    static func logListening(song: Song, seconds: Double, stableId: String? = nil) {
         guard seconds > 0 else { return }
         let songPath = song.url.lastPathComponent
         let title = song.title
@@ -88,32 +101,68 @@ enum AnalyticsService {
             guard let db else { return }
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db,
-                "INSERT INTO listening (song_path,title,seconds,day,timestamp) VALUES (?,?,?,?,?)",
+                "INSERT INTO listening (song_path,title,seconds,day,timestamp,stable_id) VALUES (?,?,?,?,?,?)",
                 -1, &stmt, nil) == SQLITE_OK else { return }
             sqlite3_bind_text(stmt, 1, songPath, -1, TRANSIENT)
             sqlite3_bind_text(stmt, 2, title,    -1, TRANSIENT)
             sqlite3_bind_double(stmt, 3, seconds)
             sqlite3_bind_text(stmt, 4, day,      -1, TRANSIENT)
             sqlite3_bind_double(stmt, 5, ts)
+            if let sid = stableId {
+                sqlite3_bind_text(stmt, 6, sid, -1, TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 6)
+            }
             sqlite3_step(stmt)
             sqlite3_finalize(stmt)
         }
     }
+
+    // MARK: - Migration
+
+    /// Backfill stable_id for existing rows whose filename matches a known file.
+    /// Idempotent — only touches rows where stable_id IS NULL.
+    /// Call once at launch after features have been extracted.
+    static func backfillStableIds(_ map: [String: String]) {
+        guard !map.isEmpty else { return }
+        queue.async {
+            guard let db else { return }
+            for (filename, sid) in map {
+                var stmt: OpaquePointer?
+                if sqlite3_prepare_v2(db,
+                    "UPDATE events   SET stable_id=? WHERE song_path=? AND stable_id IS NULL",
+                    -1, &stmt, nil) == SQLITE_OK {
+                    sqlite3_bind_text(stmt, 1, sid,      -1, TRANSIENT)
+                    sqlite3_bind_text(stmt, 2, filename, -1, TRANSIENT)
+                    sqlite3_step(stmt); sqlite3_finalize(stmt)
+                }
+                if sqlite3_prepare_v2(db,
+                    "UPDATE listening SET stable_id=? WHERE song_path=? AND stable_id IS NULL",
+                    -1, &stmt, nil) == SQLITE_OK {
+                    sqlite3_bind_text(stmt, 1, sid,      -1, TRANSIENT)
+                    sqlite3_bind_text(stmt, 2, filename, -1, TRANSIENT)
+                    sqlite3_step(stmt); sqlite3_finalize(stmt)
+                }
+            }
+        }
+    }
+
+    // MARK: - Reads
 
     static func listeningBySong() -> [ListeningStat] {
         queue.sync {
             guard let db else { return [] }
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, """
-                SELECT song_path, title, SUM(seconds)
-                FROM listening GROUP BY song_path ORDER BY 3 DESC
+                SELECT COALESCE(stable_id, song_path), title, SUM(seconds)
+                FROM listening GROUP BY COALESCE(stable_id, song_path) ORDER BY 3 DESC
             """, -1, &stmt, nil) == SQLITE_OK else { return [] }
             var rows: [ListeningStat] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
                 rows.append(ListeningStat(
-                    songPath: String(cString: sqlite3_column_text(stmt, 0)),
-                    title:    String(cString: sqlite3_column_text(stmt, 1)),
-                    seconds:  sqlite3_column_double(stmt, 2)
+                    id:      String(cString: sqlite3_column_text(stmt, 0)),
+                    title:   String(cString: sqlite3_column_text(stmt, 1)),
+                    seconds: sqlite3_column_double(stmt, 2)
                 ))
             }
             sqlite3_finalize(stmt)
@@ -175,7 +224,6 @@ enum AnalyticsService {
     static func listeningDaysBySong(days: Int = 14) -> [String: [Double]] {
         let today = Date()
         let cal = Calendar.current
-        // Build the ordered list of day-string buckets (oldest first)
         let dayKeys: [String] = (0..<days).reversed().compactMap { offset in
             cal.date(byAdding: .day, value: -offset, to: today).map { dayFormatter.string(from: $0) }
         }
@@ -185,24 +233,21 @@ enum AnalyticsService {
             guard let db else { return [:] }
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, """
-                SELECT song_path, day, SUM(seconds)
+                SELECT COALESCE(stable_id, song_path), day, SUM(seconds)
                 FROM listening
                 WHERE day >= ?
-                GROUP BY song_path, day
+                GROUP BY COALESCE(stable_id, song_path), day
             """, -1, &stmt, nil) == SQLITE_OK else { return [:] }
             sqlite3_bind_text(stmt, 1, oldest, -1, TRANSIENT)
 
-            // raw[songPath][day] = seconds
             var raw: [String: [String: Double]] = [:]
             while sqlite3_step(stmt) == SQLITE_ROW {
-                let path = String(cString: sqlite3_column_text(stmt, 0))
-                let day  = String(cString: sqlite3_column_text(stmt, 1))
+                let id  = String(cString: sqlite3_column_text(stmt, 0))
+                let day = String(cString: sqlite3_column_text(stmt, 1))
                 let secs = sqlite3_column_double(stmt, 2)
-                raw[path, default: [:]][day] = secs
+                raw[id, default: [:]][day] = secs
             }
             sqlite3_finalize(stmt)
-
-            // Pivot: fill zeros for days with no listening so arrays are fixed-length
             return raw.mapValues { dayMap in dayKeys.map { dayMap[$0] ?? 0.0 } }
         }
     }
@@ -213,32 +258,33 @@ enum AnalyticsService {
             guard let db else { return [:] }
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, """
-                SELECT song_path,
+                SELECT COALESCE(stable_id, song_path),
                     COUNT(CASE WHEN event='complete'        THEN 1 END) * 1.00 +
                     COUNT(CASE WHEN event='milestone_75'   THEN 1 END) * 0.75 +
                     COUNT(CASE WHEN event='milestone_50'   THEN 1 END) * 0.50 +
                     COUNT(CASE WHEN event='milestone_25'   THEN 1 END) * 0.25 AS engagement,
                     COUNT(CASE WHEN event='skip'           THEN 1 END) AS dislikes
-                FROM events GROUP BY song_path
+                FROM events GROUP BY COALESCE(stable_id, song_path)
             """, -1, &stmt, nil) == SQLITE_OK else { return [:] }
             var scores: [String: Double] = [:]
             while sqlite3_step(stmt) == SQLITE_ROW {
-                let path = String(cString: sqlite3_column_text(stmt, 0))
-                let eng  = sqlite3_column_double(stmt, 1)
-                let dis  = sqlite3_column_double(stmt, 2)
-                scores[path] = (eng + dis) > 0 ? eng / (eng + dis) : 0.5
+                let id  = String(cString: sqlite3_column_text(stmt, 0))
+                let eng = sqlite3_column_double(stmt, 1)
+                let dis = sqlite3_column_double(stmt, 2)
+                scores[id] = (eng + dis) > 0 ? eng / (eng + dis) : 0.5
             }
             sqlite3_finalize(stmt)
             return scores
         }
     }
 
-    static func lastPlayedSongPath() -> String? {
+    /// Returns the stable_id (or filename for pre-migration rows) of the most recently played song.
+    static func lastPlayedStableId() -> String? {
         queue.sync {
             guard let db else { return nil }
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db,
-                "SELECT song_path FROM events WHERE event='play' ORDER BY timestamp DESC LIMIT 1",
+                "SELECT COALESCE(stable_id, song_path) FROM events WHERE event='play' ORDER BY timestamp DESC LIMIT 1",
                 -1, &stmt, nil) == SQLITE_OK else { return nil }
             defer { sqlite3_finalize(stmt) }
             guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
@@ -248,16 +294,15 @@ enum AnalyticsService {
 
     /// Groups total listening seconds by an arbitrary tag attribute (artist/album/year/genre).
     /// Songs with a nil or empty attribute value are dropped (not bucketed as "Unknown").
-    /// ponytail: join key is filename — same-named files in different folders collapse together,
-    ///           matching the pre-existing listening-table behaviour; fix by using full URL if ever needed.
+    /// ponytail: join key is stable_id (or filename fallback) — content-stable across renames/retags.
     static func topGroups(
         listening: [ListeningStat],
-        featureByFile: [String: TrackFeatures],
+        featureById: [String: TrackFeatures],
         attribute: (TrackFeatures) -> String?
     ) -> [(name: String, seconds: Double)] {
         var totals: [String: Double] = [:]
         for row in listening {
-            guard let f = featureByFile[row.songPath],
+            guard let f = featureById[row.id],
                   let name = attribute(f), !name.isEmpty else { continue }
             totals[name, default: 0] += row.seconds
         }
@@ -269,16 +314,16 @@ enum AnalyticsService {
             guard let db else { return [] }
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, """
-                SELECT song_path, title,
+                SELECT COALESCE(stable_id, song_path), title,
                     COUNT(CASE WHEN event='play'     THEN 1 END),
                     COUNT(CASE WHEN event='skip'     THEN 1 END),
                     COUNT(CASE WHEN event='complete' THEN 1 END)
-                FROM events GROUP BY song_path ORDER BY 3 DESC
+                FROM events GROUP BY COALESCE(stable_id, song_path) ORDER BY 3 DESC
             """, -1, &stmt, nil) == SQLITE_OK else { return [] }
             var rows: [SongStat] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
                 rows.append(SongStat(
-                    songPath:    String(cString: sqlite3_column_text(stmt, 0)),
+                    id:          String(cString: sqlite3_column_text(stmt, 0)),
                     title:       String(cString: sqlite3_column_text(stmt, 1)),
                     plays:       Int(sqlite3_column_int(stmt, 2)),
                     skips:       Int(sqlite3_column_int(stmt, 3)),

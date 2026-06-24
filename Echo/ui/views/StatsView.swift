@@ -38,15 +38,19 @@ struct StatsView: View {
             byDay     = makeDayPoints(AnalyticsService.listeningByDay().reversed())
 
             let features = await playerViewModel.allFeatures()
-            // ponytail: keyed by filename — matches listening table's song_path
-            let byFile = Dictionary(features.map { ($0.songURL.lastPathComponent, $0) },
-                                    uniquingKeysWith: { a, _ in a })
+            // Key by stableId when available, filename fallback for pre-migration entries.
+            let byId = Dictionary(
+                features.map { f -> (String, TrackFeatures) in
+                    (f.stableId ?? f.songURL.lastPathComponent, f)
+                },
+                uniquingKeysWith: { a, _ in a }
+            )
             let qualify: ([(name: String, seconds: Double)]) -> [(name: String, seconds: Double)] =
                 { $0.filter { $0.seconds >= 3600 }.prefix(10).map { $0 } }
-            topArtists = qualify(AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.artist })
-            topAlbums  = qualify(AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.album })
-            topYears   = qualify(AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.year.map(String.init) })
-            topGenres  = qualify(AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.genre })
+            topArtists = qualify(AnalyticsService.topGroups(listening: listening, featureById: byId) { $0.artist })
+            topAlbums  = qualify(AnalyticsService.topGroups(listening: listening, featureById: byId) { $0.album })
+            topYears   = qualify(AnalyticsService.topGroups(listening: listening, featureById: byId) { $0.year.map(String.init) })
+            topGenres  = qualify(AnalyticsService.topGroups(listening: listening, featureById: byId) { $0.genre })
         }
     }
 

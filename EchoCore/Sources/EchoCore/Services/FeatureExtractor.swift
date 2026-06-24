@@ -97,6 +97,12 @@ public actor FeatureExtractor {
         // RMS loudness — always computable, no tags needed
         features.averageLoudness = Self.computeRMS(url: url)
 
+        // Chromaprint fingerprint — non-fatal; nil if the file can't be decoded
+        if let fp = Fingerprinter.fingerprint(url: url) {
+            features.stableId   = fp.stableId
+            features.fingerprint = fp.fingerprint
+        }
+
         return features
     }
 

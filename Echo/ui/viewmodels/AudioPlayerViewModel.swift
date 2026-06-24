@@ -18,6 +18,9 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var originalQueue: [Song] = []
     private var currentIndex: Int?
 
+    // Stable fingerprint ID for the currently-playing song; set async after play() starts.
+    private var nowPlayingStableId: String?
+
     private let featureStore: FeatureStore = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = support.appendingPathComponent("Echo")
@@ -54,7 +57,8 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             self.lastSongCompleted = true
             self.flushListening()
             if let song = self.nowPlaying {
-                AnalyticsService.track(event: "complete", song: song, progress: 1.0)
+                let sid = await self.featureStore.features(for: song.url)?.stableId
+                AnalyticsService.track(event: "complete", song: song, progress: 1.0, stableId: sid)
             }
             self.playNext()
         }
@@ -63,9 +67,10 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func play(_ song: Song, in queue: [Song] = []) {
         flushListening()
         if let current = nowPlaying, !lastSongCompleted {
-            AnalyticsService.track(event: "skip", song: current, progress: progress)
+            AnalyticsService.track(event: "skip", song: current, progress: progress, stableId: nowPlayingStableId)
         }
         lastSongCompleted = false
+        nowPlayingStableId = nil  // clear until the async lookup settles
 
         if !queue.isEmpty {
             self.originalQueue = queue
@@ -88,19 +93,39 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         } catch {
             print("Error playing \(song.title): \(error)")
         }
-        AnalyticsService.track(event: "play", song: song, progress: 0.0)
-        Task { await refreshRecommendations() }
+        AnalyticsService.track(event: "play", song: song, progress: 0.0, stableId: nil)
+        Task {
+            // Resolve stableId asynchronously then backfill the just-written "play" row
+            // and any other rows written before the lookup settled (timing gap).
+            nowPlayingStableId = await featureStore.features(for: song.url)?.stableId
+            if let sid = nowPlayingStableId {
+                AnalyticsService.backfillStableIds([song.url.lastPathComponent: sid])
+            }
+            await refreshRecommendations()
+        }
     }
 
     // Called from Home.onAppear to seed recommendations before anything is playing.
     func loadInitialRecommendations(from songs: [Song]) {
         guard recommendations.isEmpty, nowPlaying == nil else { return }
-        guard let lastPath = AnalyticsService.lastPlayedSongPath(),
-              let seed = songs.first(where: { $0.url.lastPathComponent == lastPath })
-        else { return }
         Task {
             await featureStore.load()
             await featureStore.ensureFeatures(for: songs.map(\.url), using: featureExtractor)
+            let allFeatures = await featureStore.allFeatures()
+            let filenameToStableId = Dictionary(
+                allFeatures.compactMap { f -> (String, String)? in
+                    f.stableId.map { (f.songURL.lastPathComponent, $0) }
+                },
+                uniquingKeysWith: { a, _ in a }
+            )
+            guard let lastId = AnalyticsService.lastPlayedStableId() else { return }
+            let seed = songs.first(where: { f in
+                guard let sid = filenameToStableId[f.url.lastPathComponent] else {
+                    return f.url.lastPathComponent == lastId
+                }
+                return sid == lastId
+            })
+            guard let seed else { return }
             await computeRecommendations(seed: seed, library: songs)
         }
     }
@@ -135,7 +160,9 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             .compactMap { rec -> (song: Song, score: Double)? in
                 guard let song = urlToSong[rec.songURL] else { return nil }
                 // ponytail: 0.3 likeability nudge; raise toward 0.5 for more personalization
-                let likeScore = like[rec.songURL.lastPathComponent] ?? 0.5
+                // Key by stableId when available, filename fallback for pre-migration rows.
+                let likeKey  = featuresByURL[rec.songURL]?.stableId ?? rec.songURL.lastPathComponent
+                let likeScore = like[likeKey] ?? 0.5
                 return (song, 0.7 * rec.similarityScore + 0.3 * likeScore)
             }
             .sorted { $0.score > $1.score }
@@ -149,11 +176,11 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             player.pause()
             isPlaying = false
             flushListening()
-            if let song = nowPlaying { AnalyticsService.track(event: "pause", song: song, progress: progress) }
+            if let song = nowPlaying { AnalyticsService.track(event: "pause", song: song, progress: progress, stableId: nowPlayingStableId) }
         } else {
             player.resume()
             isPlaying = true
-            if let song = nowPlaying { AnalyticsService.track(event: "resume", song: song, progress: progress) }
+            if let song = nowPlaying { AnalyticsService.track(event: "resume", song: song, progress: progress, stableId: nowPlayingStableId) }
         }
         updateSystemNowPlaying()
     }
@@ -207,13 +234,13 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let pct = Int(progress * 100)
         for milestone in [25, 50, 75] where pct >= milestone && !trackedMilestones.contains(milestone) {
             trackedMilestones.insert(milestone)
-            AnalyticsService.track(event: "milestone_\(milestone)", song: song, progress: progress)
+            AnalyticsService.track(event: "milestone_\(milestone)", song: song, progress: progress, stableId: nowPlayingStableId)
         }
     }
 
     private func flushListening() {
         guard listenAccrued > 0, let song = nowPlaying else { return }
-        AnalyticsService.logListening(song: song, seconds: listenAccrued)
+        AnalyticsService.logListening(song: song, seconds: listenAccrued, stableId: nowPlayingStableId)
         listenAccrued = 0
     }
 

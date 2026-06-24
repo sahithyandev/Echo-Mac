@@ -3,7 +3,6 @@ import EchoCore
 
 struct SongRow: View {
     let song: Song
-
     var body: some View {
         HStack(spacing: AppSpacing.sm) {
             SongArtworkView(song: song, size: 44)
