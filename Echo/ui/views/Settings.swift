@@ -66,7 +66,7 @@ struct Settings: View {
 
     private func loadDuplicates() async {
         let features = await playerViewModel.allFeatures()
-        let grouped = Dictionary(grouping: features.filter { $0.stableId != nil }, by: { $0.stableId! })
+        let grouped = Dictionary(grouping: features.filter { $0.stableId != nil && FileManager.default.fileExists(atPath: $0.songURL.path(percentEncoded: false)) }, by: { $0.stableId! })
         duplicateGroups = grouped.values
             .filter { $0.count > 1 }
             .sorted { groupTitle($0) < groupTitle($1) }
