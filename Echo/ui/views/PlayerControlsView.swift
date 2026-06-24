@@ -3,6 +3,7 @@ import EchoCore
 
 struct PlayerControlsView: View {
     @ObservedObject var playerViewModel: AudioPlayerViewModel
+    var namespace: Namespace.ID
     var onInfoTap: () -> Void = {}
 
     var body: some View {
@@ -13,15 +14,18 @@ struct PlayerControlsView: View {
                     HStack(spacing: AppSpacing.sm) {
                         if let song = playerViewModel.nowPlaying {
                             SongArtworkView(song: song, size: 40)
+                                .matchedGeometryEffect(id: "heroArtwork", in: namespace)
                         }
                         VStack(alignment: .leading, spacing: 2) {
                             Text(playerViewModel.nowPlaying?.title ?? "")
+                                .matchedGeometryEffect(id: "heroTitle", in: namespace)
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                             if let detail = playerViewModel.nowPlaying.flatMap(subtitle) {
                                 Text(detail)
+                                    .matchedGeometryEffect(id: "heroSubtitle", in: namespace)
                                     .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
@@ -38,6 +42,7 @@ struct PlayerControlsView: View {
                 HStack(spacing: AppSpacing.sm) {
                     Button { playerViewModel.toggleShuffle() } label: {
                         Image(systemName: "shuffle")
+                            .matchedGeometryEffect(id: "heroShuffle", in: namespace)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(playerViewModel.isShuffled
                                 ? AnyShapeStyle(AppColor.accent)
@@ -47,6 +52,7 @@ struct PlayerControlsView: View {
 
                     Button { playerViewModel.playPrev() } label: {
                         Image(systemName: "backward.fill")
+                            .matchedGeometryEffect(id: "heroPrev", in: namespace)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(playerViewModel.canPlayPrev
                                 ? AnyShapeStyle(.primary)
@@ -62,11 +68,13 @@ struct PlayerControlsView: View {
                             .frame(width: 36, height: 36)
                             .background(AppColor.accent)
                             .clipShape(Circle())
+                            .matchedGeometryEffect(id: "heroPlayButton", in: namespace)
                     }
                     .buttonStyle(.plain)
 
                     Button { playerViewModel.playNext() } label: {
                         Image(systemName: "forward.fill")
+                            .matchedGeometryEffect(id: "heroNext", in: namespace)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(playerViewModel.canPlayNext
                                 ? AnyShapeStyle(.primary)
@@ -89,6 +97,7 @@ struct PlayerControlsView: View {
                 showTimeLabels: false,
                 alwaysShowThumb: false
             )
+            .matchedGeometryEffect(id: "heroScrubber", in: namespace)
             .padding(.horizontal, AppSpacing.md)
             .padding(.bottom, AppSpacing.sm)
         }

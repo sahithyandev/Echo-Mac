@@ -5,10 +5,18 @@ struct Root: View {
     @EnvironmentObject private var navigationState: AppNavigationState
     @EnvironmentObject private var libraryViewModel: MusicLibraryViewModel
     @EnvironmentObject private var playerViewModel: AudioPlayerViewModel
+    @Namespace private var heroNamespace
+
+    private var animatedPageBinding: Binding<Page?> {
+        Binding(
+            get: { navigationState.currentPage },
+            set: { if let p = $0 { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { navigationState.currentPage = p } } }
+        )
+    }
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $navigationState.currentPage) {
+            List(selection: animatedPageBinding) {
                 Label("Home", systemImage: "music.note.house")
                     .tag(Page.home)
 
@@ -26,7 +34,7 @@ struct Root: View {
         } detail: {
             switch navigationState.currentPage {
             case .nowPlaying:
-                NowPlayingView(playerViewModel: playerViewModel)
+                NowPlayingView(playerViewModel: playerViewModel, namespace: heroNamespace)
             case .stats:
                 StatsView()
             case .settings:
@@ -40,8 +48,10 @@ struct Root: View {
         .tint(AppColor.accent)
         .safeAreaInset(edge: .bottom) {
             if playerViewModel.nowPlaying != nil && navigationState.currentPage != .nowPlaying {
-                PlayerControlsView(playerViewModel: playerViewModel) {
-                    navigationState.currentPage = .nowPlaying
+                PlayerControlsView(playerViewModel: playerViewModel, namespace: heroNamespace) {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                        navigationState.currentPage = .nowPlaying
+                    }
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
