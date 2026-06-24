@@ -18,8 +18,8 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var originalQueue: [Song] = []
     private var currentIndex: Int?
 
-    // Stable fingerprint ID for the currently-playing song; set async after play() starts.
-    private var nowPlayingStableId: String?
+    // song_id for the currently-playing song (filename until fingerprint resolves, then stableId).
+    private var nowPlayingSongId: String?
 
     private let featureStore: FeatureStore = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -58,7 +58,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             self.flushListening()
             if let song = self.nowPlaying {
                 let sid = await self.featureStore.features(for: song.url)?.stableId
-                AnalyticsService.track(event: "complete", song: song, progress: 1.0, stableId: sid)
+                PlaybackStore.track(event: "complete", songId: sid ?? song.url.lastPathComponent, progress: 1.0)
             }
             self.playNext()
         }
@@ -67,10 +67,14 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func play(_ song: Song, in queue: [Song] = []) {
         flushListening()
         if let current = nowPlaying, !lastSongCompleted {
-            AnalyticsService.track(event: "skip", song: current, progress: progress, stableId: nowPlayingStableId)
+            PlaybackStore.track(event: "skip", songId: nowPlayingSongId ?? current.url.lastPathComponent, progress: progress)
         }
         lastSongCompleted = false
-        nowPlayingStableId = nil  // clear until the async lookup settles
+
+        // Set song_id to filename immediately so the play event and early listen rows have a valid key.
+        // The async Task below promotes it to the stableId once the fingerprint resolves.
+        let initialId = song.url.lastPathComponent
+        nowPlayingSongId = initialId
 
         if !queue.isEmpty {
             self.originalQueue = queue
@@ -93,13 +97,23 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         } catch {
             print("Error playing \(song.title): \(error)")
         }
-        AnalyticsService.track(event: "play", song: song, progress: 0.0, stableId: nil)
+        PlaybackStore.track(event: "play", songId: initialId, progress: 0.0)
         Task {
-            // Resolve stableId asynchronously then backfill the just-written "play" row
-            // and any other rows written before the lookup settled (timing gap).
-            nowPlayingStableId = await featureStore.features(for: song.url)?.stableId
-            if let sid = nowPlayingStableId {
-                AnalyticsService.backfillStableIds([song.url.lastPathComponent: sid])
+            // Resolve stableId asynchronously, then promote song_id and reconcile early rows.
+            let features = await featureStore.features(for: song.url)
+            if let sid = features?.stableId {
+                nowPlayingSongId = sid
+                PlaybackStore.upsertSong(id: sid, title: song.title,
+                                         artist: features?.artist, album: features?.album,
+                                         year: features?.year, genre: features?.genre)
+                PlaybackStore.addPath(song.url.path, songId: sid)
+                PlaybackStore.reconcile(filename: initialId, to: sid)
+            } else {
+                // Fingerprint not yet available — register with filename key so metadata is queryable
+                PlaybackStore.upsertSong(id: initialId, title: song.title,
+                                         artist: features?.artist, album: features?.album,
+                                         year: features?.year, genre: features?.genre)
+                PlaybackStore.addPath(song.url.path, songId: initialId)
             }
             await refreshRecommendations()
         }
@@ -112,13 +126,17 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             await featureStore.load()
             await featureStore.ensureFeatures(for: songs.map(\.url), using: featureExtractor)
             let allFeatures = await featureStore.allFeatures()
+
+            // Populate artist/album/year/genre for migrated songs that have no metadata yet in playback.db
+            PlaybackStore.backfillSongMetadata(allFeatures)
+
             let filenameToStableId = Dictionary(
                 allFeatures.compactMap { f -> (String, String)? in
                     f.stableId.map { (f.songURL.lastPathComponent, $0) }
                 },
                 uniquingKeysWith: { a, _ in a }
             )
-            guard let lastId = AnalyticsService.lastPlayedStableId() else { return }
+            guard let lastId = PlaybackStore.lastPlayedSongId() else { return }
             let seed = songs.first(where: { f in
                 guard let sid = filenameToStableId[f.url.lastPathComponent] else {
                     return f.url.lastPathComponent == lastId
@@ -144,7 +162,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let allFeatures = await featureStore.allFeatures()
         // Pull a larger pool so likeability re-rank has room to work before truncation
         let recs = similarityEngine.recommendations(for: seedFeatures, from: allFeatures, count: 20)
-        let like = AnalyticsService.likeabilityScores()
+        let like = PlaybackStore.likeabilityScores()
         // Feature store has authoritative ID3 metadata; backfill onto Song in case
         // MusicLibraryViewModel.loadMetadata() hadn't finished when play() was called.
         let featuresByURL = Dictionary(uniqueKeysWithValues: allFeatures.map { ($0.songURL, $0) })
@@ -160,8 +178,8 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             .compactMap { rec -> (song: Song, score: Double)? in
                 guard let song = urlToSong[rec.songURL] else { return nil }
                 // ponytail: 0.3 likeability nudge; raise toward 0.5 for more personalization
-                // Key by stableId when available, filename fallback for pre-migration rows.
-                let likeKey  = featuresByURL[rec.songURL]?.stableId ?? rec.songURL.lastPathComponent
+                // Key by stableId when available, filename fallback for pre-fingerprint songs.
+                let likeKey   = featuresByURL[rec.songURL]?.stableId ?? rec.songURL.lastPathComponent
                 let likeScore = like[likeKey] ?? 0.5
                 return (song, 0.7 * rec.similarityScore + 0.3 * likeScore)
             }
@@ -176,11 +194,15 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             player.pause()
             isPlaying = false
             flushListening()
-            if let song = nowPlaying { AnalyticsService.track(event: "pause", song: song, progress: progress, stableId: nowPlayingStableId) }
+            if let song = nowPlaying {
+                PlaybackStore.track(event: "pause", songId: nowPlayingSongId ?? song.url.lastPathComponent, progress: progress)
+            }
         } else {
             player.resume()
             isPlaying = true
-            if let song = nowPlaying { AnalyticsService.track(event: "resume", song: song, progress: progress, stableId: nowPlayingStableId) }
+            if let song = nowPlaying {
+                PlaybackStore.track(event: "resume", songId: nowPlayingSongId ?? song.url.lastPathComponent, progress: progress)
+            }
         }
         updateSystemNowPlaying()
     }
@@ -234,13 +256,13 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let pct = Int(progress * 100)
         for milestone in [25, 50, 75] where pct >= milestone && !trackedMilestones.contains(milestone) {
             trackedMilestones.insert(milestone)
-            AnalyticsService.track(event: "milestone_\(milestone)", song: song, progress: progress, stableId: nowPlayingStableId)
+            PlaybackStore.track(event: "milestone_\(milestone)", songId: nowPlayingSongId ?? song.url.lastPathComponent, progress: progress)
         }
     }
 
     private func flushListening() {
         guard listenAccrued > 0, let song = nowPlaying else { return }
-        AnalyticsService.logListening(song: song, seconds: listenAccrued, stableId: nowPlayingStableId)
+        PlaybackStore.logListening(songId: nowPlayingSongId ?? song.url.lastPathComponent, seconds: listenAccrued)
         listenAccrued = 0
     }
 
@@ -270,7 +292,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         currentIndex = idx - 1
     }
 
-    /// Returns all cached TrackFeatures — used by StatsView for artist/album/year/genre breakdowns.
+    /// Returns all cached TrackFeatures — used by recommendation engine.
     /// Only reads what's already on disk; does not trigger extraction.
     func allFeatures() async -> [TrackFeatures] {
         await featureStore.load()

@@ -1,11 +1,7 @@
 import SwiftUI
 import Charts
-import EchoCore
 
 struct StatsView: View {
-    @EnvironmentObject private var playerViewModel: AudioPlayerViewModel
-
-    @State private var listening: [ListeningStat] = []
     @State private var totals: (today: Double, week: Double, allTime: Double) = (0, 0, 0)
     @State private var byDay: [DayPoint] = []
     @State private var topArtists: [(name: String, seconds: Double)] = []
@@ -33,24 +29,12 @@ struct StatsView: View {
         }
         .navigationTitle("Stats")
         .task {
-            listening = AnalyticsService.listeningBySong()
-            totals    = AnalyticsService.listeningTotals()
-            byDay     = makeDayPoints(AnalyticsService.listeningByDay().reversed())
-
-            let features = await playerViewModel.allFeatures()
-            // Key by stableId when available, filename fallback for pre-migration entries.
-            let byId = Dictionary(
-                features.map { f -> (String, TrackFeatures) in
-                    (f.stableId ?? f.songURL.lastPathComponent, f)
-                },
-                uniquingKeysWith: { a, _ in a }
-            )
-            let qualify: ([(name: String, seconds: Double)]) -> [(name: String, seconds: Double)] =
-                { $0.filter { $0.seconds >= 3600 }.prefix(10).map { $0 } }
-            topArtists = qualify(AnalyticsService.topGroups(listening: listening, featureById: byId) { $0.artist })
-            topAlbums  = qualify(AnalyticsService.topGroups(listening: listening, featureById: byId) { $0.album })
-            topYears   = qualify(AnalyticsService.topGroups(listening: listening, featureById: byId) { $0.year.map(String.init) })
-            topGenres  = qualify(AnalyticsService.topGroups(listening: listening, featureById: byId) { $0.genre })
+            totals    = PlaybackStore.listeningTotals()
+            byDay     = makeDayPoints(PlaybackStore.listeningByDay().reversed())
+            topArtists = PlaybackStore.topByArtist()
+            topAlbums  = PlaybackStore.topByAlbum()
+            topYears   = PlaybackStore.topByYear()
+            topGenres  = PlaybackStore.topByGenre()
         }
     }
 
