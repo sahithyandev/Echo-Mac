@@ -26,6 +26,9 @@ public actor FeatureStore {
     /// Returns cached features for `url`, or nil if not cached or the source file changed.
     public func features(for url: URL) -> TrackFeatures? {
         guard let cached = cache[url.absoluteString] else { return nil }
+        if (cached.schemaVersion ?? 1) < TrackFeatures.currentSchemaVersion {
+            return nil  // new fields added; re-extract
+        }
         let attrs = try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))
         if let modDate = attrs?[.modificationDate] as? Date, modDate > cached.extractedAt {
             return nil  // source file changed since last extraction

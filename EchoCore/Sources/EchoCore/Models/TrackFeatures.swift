@@ -2,15 +2,22 @@ import Foundation
 
 /// Audio features extracted from a song, used as the input vector for similarity comparison.
 public struct TrackFeatures: Codable, Sendable, Identifiable {
+    // Bump when new fields are added so FeatureStore knows to re-extract stale entries.
+    public static let currentSchemaVersion = 2
+
     public var id: URL { songURL }
     public let songURL: URL
     public let extractedAt: Date
+    public var schemaVersion: Int? = Self.currentSchemaVersion  // nil = pre-v2 entry
 
-    // From ID3 tags (TBPM, TKEY, TCON) — populated by FeatureExtractor
+    // From ID3 tags (TBPM, TKEY, TCON, TPE1, TALB, TDRC) — populated by FeatureExtractor
     public var tempoEstimate: Double?       // BPM
     public var key: Int?                    // 0–11 pitch class (C=0, C#=1, …, B=11)
     public var mode: Int?                   // 0=minor, 1=major
     public var genre: String?               // e.g. "Electronic", "Jazz"
+    public var artist: String?
+    public var album: String?
+    public var year: Int?
 
     // Placeholders for future Music Understanding Framework features
     public var averageLoudness: Double?     // dBFS

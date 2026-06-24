@@ -115,14 +115,33 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     private func computeRecommendations(seed: Song, library: [Song]) async {
-        guard let seedFeatures = await featureStore.features(for: seed.url) else {
-            recommendations = []
-            return
-        }
+        guard let seedFeatures = await featureStore.features(for: seed.url) else { return }
         let allFeatures = await featureStore.allFeatures()
-        let recs = similarityEngine.recommendations(for: seedFeatures, from: allFeatures, count: 5)
-        let urlToSong = Dictionary(uniqueKeysWithValues: library.map { ($0.url, $0) })
-        recommendations = recs.compactMap { urlToSong[$0.songURL] }
+        // Pull a larger pool so likeability re-rank has room to work before truncation
+        let recs = similarityEngine.recommendations(for: seedFeatures, from: allFeatures, count: 20)
+        let like = AnalyticsService.likeabilityScores()
+        // Feature store has authoritative ID3 metadata; backfill onto Song in case
+        // MusicLibraryViewModel.loadMetadata() hadn't finished when play() was called.
+        let featuresByURL = Dictionary(uniqueKeysWithValues: allFeatures.map { ($0.songURL, $0) })
+        let urlToSong = Dictionary(uniqueKeysWithValues: library.map { song -> (URL, Song) in
+            var s = song
+            if let f = featuresByURL[song.url] {
+                s.artist = f.artist ?? s.artist
+                s.album  = f.album  ?? s.album
+            }
+            return (s.url, s)
+        })
+        let updated = recs
+            .compactMap { rec -> (song: Song, score: Double)? in
+                guard let song = urlToSong[rec.songURL] else { return nil }
+                // ponytail: 0.3 likeability nudge; raise toward 0.5 for more personalization
+                let likeScore = like[rec.songURL.lastPathComponent] ?? 0.5
+                return (song, 0.7 * rec.similarityScore + 0.3 * likeScore)
+            }
+            .sorted { $0.score > $1.score }
+            .prefix(5)
+            .map(\.song)
+        if !updated.isEmpty { recommendations = updated }
     }
 
     func togglePlayPause() {

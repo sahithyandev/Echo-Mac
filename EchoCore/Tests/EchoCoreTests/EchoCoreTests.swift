@@ -41,6 +41,16 @@ struct FeatureExtractorTests {
         #expect(FeatureExtractor.parseKey("o") == nil)
     }
 
+    @Test("parseYear handles plain year, ISO date, and junk")
+    func parseYear() {
+        #expect(FeatureExtractor.parseYear("2001")       == 2001)
+        #expect(FeatureExtractor.parseYear("2001-05-03") == 2001)
+        #expect(FeatureExtractor.parseYear("2001-05")    == 2001)
+        #expect(FeatureExtractor.parseYear("junk")       == nil)
+        #expect(FeatureExtractor.parseYear("")            == nil)
+        #expect(FeatureExtractor.parseYear("999")         == nil)   // too short
+    }
+
     @Test("extract throws for non-existent file")
     func extractMissingFile() async {
         let extractor = FeatureExtractor()
@@ -62,13 +72,19 @@ struct SimilarityEngineTests {
     private let engine = SimilarityEngine()
 
     private func make(_ path: String, bpm: Double? = nil, key: Int? = nil, mode: Int? = nil,
-                      loudness: Double? = nil, duration: Double? = nil) -> TrackFeatures {
+                      loudness: Double? = nil, duration: Double? = nil,
+                      artist: String? = nil, album: String? = nil,
+                      year: Int? = nil, genre: String? = nil) -> TrackFeatures {
         var f = TrackFeatures(songURL: URL(fileURLWithPath: path))
         f.tempoEstimate = bpm
         f.key = key
         f.mode = mode
         f.averageLoudness = loudness
         f.durationSeconds = duration
+        f.artist = artist
+        f.album = album
+        f.year = year
+        f.genre = genre
         return f
     }
 
@@ -125,6 +141,33 @@ struct SimilarityEngineTests {
         let far   = make("/fs.mp3",   key: 6)   // F# — 5 semitones away
         let results = engine.recommendations(for: seed, from: [seed, close, far])
         #expect(results.first?.songURL.lastPathComponent == "c.mp3")
+    }
+
+    @Test("same artist ranks above different artist")
+    func artistRanking() {
+        let seed      = make("/seed.mp3",  artist: "Radiohead")
+        let sameArtist = make("/same.mp3", artist: "Radiohead")
+        let diffArtist = make("/diff.mp3", artist: "Coldplay")
+        let results = engine.recommendations(for: seed, from: [seed, sameArtist, diffArtist])
+        #expect(results.first?.songURL.lastPathComponent == "same.mp3")
+    }
+
+    @Test("closer year ranks higher")
+    func yearRanking() {
+        let seed  = make("/seed.mp3",  year: 2000)
+        let close = make("/close.mp3", year: 2001)
+        let far   = make("/far.mp3",   year: 1985)
+        let results = engine.recommendations(for: seed, from: [seed, close, far])
+        #expect(results.first?.songURL.lastPathComponent == "close.mp3")
+    }
+
+    @Test("same genre ranks above different genre")
+    func genreRanking() {
+        let seed      = make("/seed.mp3",  genre: "Jazz")
+        let sameGenre = make("/same.mp3",  genre: "Jazz")
+        let diffGenre = make("/diff.mp3",  genre: "Metal")
+        let results = engine.recommendations(for: seed, from: [seed, sameGenre, diffGenre])
+        #expect(results.first?.songURL.lastPathComponent == "same.mp3")
     }
 
     @Test("count is respected")

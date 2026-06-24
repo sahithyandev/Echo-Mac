@@ -207,6 +207,32 @@ enum AnalyticsService {
         }
     }
 
+    // ponytail: simple engagement-vs-skip ratio; revisit with recency decay if taste drifts
+    static func likeabilityScores() -> [String: Double] {
+        queue.sync {
+            guard let db else { return [:] }
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, """
+                SELECT song_path,
+                    COUNT(CASE WHEN event='complete'        THEN 1 END) * 1.00 +
+                    COUNT(CASE WHEN event='milestone_75'   THEN 1 END) * 0.75 +
+                    COUNT(CASE WHEN event='milestone_50'   THEN 1 END) * 0.50 +
+                    COUNT(CASE WHEN event='milestone_25'   THEN 1 END) * 0.25 AS engagement,
+                    COUNT(CASE WHEN event='skip'           THEN 1 END) AS dislikes
+                FROM events GROUP BY song_path
+            """, -1, &stmt, nil) == SQLITE_OK else { return [:] }
+            var scores: [String: Double] = [:]
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let path = String(cString: sqlite3_column_text(stmt, 0))
+                let eng  = sqlite3_column_double(stmt, 1)
+                let dis  = sqlite3_column_double(stmt, 2)
+                scores[path] = (eng + dis) > 0 ? eng / (eng + dis) : 0.5
+            }
+            sqlite3_finalize(stmt)
+            return scores
+        }
+    }
+
     static func lastPlayedSongPath() -> String? {
         queue.sync {
             guard let db else { return nil }

@@ -4,12 +4,16 @@ public struct SimilarityEngine {
 
     // Tunable weights — must sum to 1.0
     public struct Weights: Sendable {
-        public var tempo: Double        = 0.30
-        public var key: Double          = 0.25   // covers both pitch class and mode
-        public var loudness: Double     = 0.15
-        public var rhythm: Double       = 0.15
-        public var instrumentActivity: Double = 0.10
-        public var duration: Double     = 0.05
+        public var tempo: Double              = 0.20
+        public var key: Double                = 0.15   // covers both pitch class and mode
+        public var artist: Double             = 0.15
+        public var genre: Double              = 0.10
+        public var loudness: Double           = 0.10
+        public var rhythm: Double             = 0.10
+        public var album: Double              = 0.05
+        public var year: Double               = 0.05
+        public var instrumentActivity: Double = 0.05
+        public var duration: Double           = 0.05
 
         public init() {}
     }
@@ -32,6 +36,7 @@ public struct SimilarityEngine {
         let tempoRange  = featureRange(all.compactMap(\.tempoEstimate))
         let loudRange   = featureRange(all.compactMap(\.averageLoudness))
         let durRange    = featureRange(all.compactMap(\.durationSeconds))
+        let yearRange   = featureRange(all.compactMap(\.year).map(Double.init))
 
         return candidates
             .map { candidate in
@@ -40,7 +45,8 @@ public struct SimilarityEngine {
                     similarityScore: similarity(seed, candidate,
                                                 tempoRange: tempoRange,
                                                 loudnessRange: loudRange,
-                                                durationRange: durRange)
+                                                durationRange: durRange,
+                                                yearRange: yearRange)
                 )
             }
             .sorted { $0.similarityScore > $1.similarityScore }
@@ -55,7 +61,8 @@ public struct SimilarityEngine {
         _ b: TrackFeatures,
         tempoRange: ClosedRange<Double>?,
         loudnessRange: ClosedRange<Double>?,
-        durationRange: ClosedRange<Double>?
+        durationRange: ClosedRange<Double>?,
+        yearRange: ClosedRange<Double>?
     ) -> Double {
         var weightedSum = 0.0
         var activeWeight = 0.0
@@ -72,11 +79,23 @@ public struct SimilarityEngine {
         // Key + mode: circular pitch-class distance (0–6 semitones) blended with mode match
         contribute(weights.key, keySim(a, b))
 
+        // Artist: exact string match (case-insensitive)
+        contribute(weights.artist, exactMatchSim(a.artist, b.artist))
+
+        // Genre: exact string match
+        contribute(weights.genre, exactMatchSim(a.genre, b.genre))
+
         // Loudness
         contribute(weights.loudness, linearSim(a.averageLoudness, b.averageLoudness, range: loudnessRange))
 
         // Rhythm
         contribute(weights.rhythm, linearSim(a.rhythmStrength, b.rhythmStrength, range: 0.0...1.0))
+
+        // Album: exact string match
+        contribute(weights.album, exactMatchSim(a.album, b.album))
+
+        // Year: linear distance normalized by library range
+        contribute(weights.year, linearSim(a.year.map(Double.init), b.year.map(Double.init), range: yearRange))
 
         // Instrument activity
         contribute(weights.instrumentActivity, linearSim(a.instrumentActivity, b.instrumentActivity, range: 0.0...1.0))
@@ -86,6 +105,12 @@ public struct SimilarityEngine {
 
         guard activeWeight > 0 else { return 0 }
         return weightedSum / activeWeight
+    }
+
+    /// 1.0 if both strings are equal (case-insensitive), 0.0 if both known but differ, nil if either is nil.
+    private func exactMatchSim(_ a: String?, _ b: String?) -> Double? {
+        guard let a, let b else { return nil }
+        return a.localizedCaseInsensitiveCompare(b) == .orderedSame ? 1.0 : 0.0
     }
 
     /// 1 − normalised absolute difference.  Returns nil if either value is nil.

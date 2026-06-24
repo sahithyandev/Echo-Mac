@@ -48,6 +48,52 @@ public actor FeatureExtractor {
             features.genre = genre
         }
 
+        // Artist — common space first (works for ID3 + iTunes), fall back to TPE1
+        let artistCommon = AVMetadataItem.metadataItems(
+            from: metadata, filteredByIdentifier: .commonIdentifierArtist)
+        if let item = artistCommon.first,
+           let artist = try? await item.load(.stringValue), !artist.isEmpty {
+            features.artist = artist
+        } else {
+            let artistID3 = AVMetadataItem.metadataItems(
+                from: metadata, filteredByIdentifier: .id3MetadataLeadPerformer)
+            if let item = artistID3.first,
+               let artist = try? await item.load(.stringValue), !artist.isEmpty {
+                features.artist = artist
+            }
+        }
+
+        // Album — common space first, fall back to TALB
+        let albumCommon = AVMetadataItem.metadataItems(
+            from: metadata, filteredByIdentifier: .commonIdentifierAlbumName)
+        if let item = albumCommon.first,
+           let album = try? await item.load(.stringValue), !album.isEmpty {
+            features.album = album
+        } else {
+            let albumID3 = AVMetadataItem.metadataItems(
+                from: metadata, filteredByIdentifier: .id3MetadataAlbumTitle)
+            if let item = albumID3.first,
+               let album = try? await item.load(.stringValue), !album.isEmpty {
+                features.album = album
+            }
+        }
+
+        // Year — try TDRC (ID3v2.4), TYER (ID3v2.3), then common creation date
+        let yearSources: [AVMetadataIdentifier] = [
+            .id3MetadataRecordingTime,
+            .id3MetadataYear,
+            .commonIdentifierCreationDate,
+        ]
+        for id in yearSources {
+            let items = AVMetadataItem.metadataItems(from: metadata, filteredByIdentifier: id)
+            if let item = items.first,
+               let str = try? await item.load(.stringValue),
+               let y = Self.parseYear(str) {
+                features.year = y
+                break
+            }
+        }
+
         // RMS loudness — always computable, no tags needed
         features.averageLoudness = Self.computeRMS(url: url)
 
@@ -86,6 +132,13 @@ public actor FeatureExtractor {
         let overallRMS = sqrt(totalSumOfSquares / Double(totalFrames))
         guard overallRMS > 0 else { return nil }
         return 20 * log10(overallRMS)   // dBFS, e.g. -14.0 for a loud track
+    }
+
+    // Pulls the first 4-digit year from strings like "2001", "2001-05-03", "2001-05".
+    static func parseYear(_ raw: String) -> Int? {
+        let s = raw.trimmingCharacters(in: .whitespaces)
+        guard s.count >= 4, let y = Int(s.prefix(4)), y >= 1000, y <= 9999 else { return nil }
+        return y
     }
 
     // TKEY values: note name + optional accidental + optional "m" for minor.
