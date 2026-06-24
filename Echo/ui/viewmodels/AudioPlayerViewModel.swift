@@ -11,11 +11,21 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var timeRemaining: TimeInterval = 0
     @Published var duration: TimeInterval = 0
     @Published var isShuffled: Bool = false
+    @Published var recommendations: [Song] = []
     private let player = AudioPlayer()
     private let systemControls = NowPlayingService()
     private(set) var queue: [Song] = []
     private var originalQueue: [Song] = []
     private var currentIndex: Int?
+
+    private let featureStore: FeatureStore = {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = support.appendingPathComponent("Echo")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return FeatureStore(storeURL: dir.appendingPathComponent("features.json"))
+    }()
+    private let featureExtractor = FeatureExtractor()
+    private let similarityEngine = SimilarityEngine()
     private var progressTimer: Timer?
     private var lastSongCompleted = false
     private var trackedMilestones = Set<Int>()
@@ -79,6 +89,40 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             print("Error playing \(song.title): \(error)")
         }
         AnalyticsService.track(event: "play", song: song, progress: 0.0)
+        Task { await refreshRecommendations() }
+    }
+
+    // Called from Home.onAppear to seed recommendations before anything is playing.
+    func loadInitialRecommendations(from songs: [Song]) {
+        guard recommendations.isEmpty, nowPlaying == nil else { return }
+        guard let lastPath = AnalyticsService.lastPlayedSongPath(),
+              let seed = songs.first(where: { $0.url.lastPathComponent == lastPath })
+        else { return }
+        Task {
+            await featureStore.load()
+            await featureStore.ensureFeatures(for: songs.map(\.url), using: featureExtractor)
+            await computeRecommendations(seed: seed, library: songs)
+        }
+    }
+
+    private func refreshRecommendations() async {
+        guard let seed = nowPlaying else { recommendations = []; return }
+        let library = originalQueue
+        await featureStore.load()
+        await featureStore.ensureFeatures(for: library.map(\.url), using: featureExtractor)
+        guard nowPlaying?.id == seed.id else { return }
+        await computeRecommendations(seed: seed, library: library)
+    }
+
+    private func computeRecommendations(seed: Song, library: [Song]) async {
+        guard let seedFeatures = await featureStore.features(for: seed.url) else {
+            recommendations = []
+            return
+        }
+        let allFeatures = await featureStore.allFeatures()
+        let recs = similarityEngine.recommendations(for: seedFeatures, from: allFeatures, count: 5)
+        let urlToSong = Dictionary(uniqueKeysWithValues: library.map { ($0.url, $0) })
+        recommendations = recs.compactMap { urlToSong[$0.songURL] }
     }
 
     func togglePlayPause() {

@@ -17,6 +17,13 @@ struct NowPlayingView: View {
                 )
                 .matchedGeometryEffect(id: "heroScrubber", in: namespace)
                 playbackControls
+
+                if !playerViewModel.recommendations.isEmpty {
+                    RecommendedSongsStrip(songs: playerViewModel.recommendations) { song in
+                        playerViewModel.play(song, in: playerViewModel.queue)
+                    }
+                    .padding(.top, AppSpacing.sm)
+                }
             }
             .padding(.horizontal, AppSpacing.lg)
             .padding(.vertical, AppSpacing.xl)

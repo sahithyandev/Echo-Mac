@@ -207,6 +207,19 @@ enum AnalyticsService {
         }
     }
 
+    static func lastPlayedSongPath() -> String? {
+        queue.sync {
+            guard let db else { return nil }
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db,
+                "SELECT song_path FROM events WHERE event='play' ORDER BY timestamp DESC LIMIT 1",
+                -1, &stmt, nil) == SQLITE_OK else { return nil }
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+            return String(cString: sqlite3_column_text(stmt, 0))
+        }
+    }
+
     static func songStats() -> [SongStat] {
         queue.sync {
             guard let db else { return [] }

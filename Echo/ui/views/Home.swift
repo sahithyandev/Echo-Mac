@@ -19,12 +19,21 @@ struct Home: View {
     }
 
     var body: some View {
-        songContent
-            .background(AppColor.background.ignoresSafeArea())
-            .searchable(text: $searchText, prompt: "Search songs, artists, albums")
-            .onAppear {
-                libraryViewModel.load(from: URL(fileURLWithPath: libraryDirectory))
+        VStack(spacing: 0) {
+            if !playerViewModel.recommendations.isEmpty && searchText.isEmpty {
+                RecommendedSongsStrip(songs: playerViewModel.recommendations) { song in
+                    playerViewModel.play(song, in: playerViewModel.queue)
+                }
+                Divider()
             }
+            songContent
+        }
+        .background(AppColor.background.ignoresSafeArea())
+        .searchable(text: $searchText, prompt: "Search songs, artists, albums")
+        .onAppear {
+            libraryViewModel.load(from: URL(fileURLWithPath: libraryDirectory))
+            playerViewModel.loadInitialRecommendations(from: libraryViewModel.songs)
+        }
     }
 
     // MARK: - Song List
