@@ -1,10 +1,17 @@
 import SwiftUI
 import Charts
+import EchoCore
 
 struct StatsView: View {
+    @EnvironmentObject private var playerViewModel: AudioPlayerViewModel
+
     @State private var listening: [ListeningStat] = []
     @State private var totals: (today: Double, week: Double, allTime: Double) = (0, 0, 0)
     @State private var byDay: [DayPoint] = []
+    @State private var topArtists: [(name: String, seconds: Double)] = []
+    @State private var topAlbums:  [(name: String, seconds: Double)] = []
+    @State private var topYears:   [(name: String, seconds: Double)] = []
+    @State private var topGenres:  [(name: String, seconds: Double)] = []
 
     struct DayPoint: Identifiable {
         let id = UUID()
@@ -16,8 +23,12 @@ struct StatsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.xl) {
                 heroSection
-                if !byDay.isEmpty    { dailyChart }
-                if !qualifiedSongs.isEmpty { topSongsSection }
+                if !byDay.isEmpty          { dailyChart }
+                if !qualifiedSongs.isEmpty { rankedList(title: "Top songs",  rows: qualifiedSongs.prefix(10).map { ($0.title, $0.seconds) }) }
+                if !topArtists.isEmpty     { rankedList(title: "Artists",    rows: topArtists.prefix(10)) }
+                if !topAlbums.isEmpty      { rankedList(title: "Albums",     rows: topAlbums.prefix(10)) }
+                if !topYears.isEmpty       { rankedList(title: "Years",      rows: topYears.prefix(10)) }
+                if !topGenres.isEmpty      { rankedList(title: "Genres",     rows: topGenres.prefix(10)) }
             }
             .padding(AppSpacing.lg)
         }
@@ -26,6 +37,15 @@ struct StatsView: View {
             listening = AnalyticsService.listeningBySong()
             totals    = AnalyticsService.listeningTotals()
             byDay     = makeDayPoints(AnalyticsService.listeningByDay().reversed())
+
+            let features = await playerViewModel.allFeatures()
+            // ponytail: keyed by filename — matches listening table's song_path
+            let byFile = Dictionary(features.map { ($0.songURL.lastPathComponent, $0) },
+                                    uniquingKeysWith: { a, _ in a })
+            topArtists = AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.artist }
+            topAlbums  = AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.album }
+            topYears   = AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.year.map(String.init) }
+            topGenres  = AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.genre }
         }
     }
 
@@ -98,36 +118,30 @@ struct StatsView: View {
         listening.filter { $0.seconds >= 1800 }
     }
 
-    // MARK: - Top songs
+    // MARK: - Ranked list (shared by songs / artists / albums / years / genres)
 
-    private var topSongsSection: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            eyebrow("Top songs")
-
+    private func rankedList(title: String, rows: some Collection<(name: String, seconds: Double)>) -> some View {
+        let items = Array(rows)
+        return VStack(alignment: .leading, spacing: AppSpacing.md) {
+            eyebrow(title)
             VStack(spacing: 0) {
-                ForEach(Array(qualifiedSongs.prefix(10).enumerated()), id: \.element.songPath) { i, stat in
+                ForEach(Array(items.enumerated()), id: \.offset) { i, row in
                     HStack(spacing: AppSpacing.md) {
                         Text("\(i + 1)")
                             .font(.system(size: 11, design: .rounded).weight(.bold))
                             .foregroundStyle(.quaternary)
                             .frame(width: 18, alignment: .trailing)
-
-                        Text(stat.title)
+                        Text(row.name)
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
-
                         Spacer()
-
-                        Text(formatSeconds(stat.seconds))
+                        Text(formatSeconds(row.seconds))
                             .font(.system(.caption, design: .rounded).weight(.semibold).monospacedDigit())
                             .foregroundStyle(AppColor.accent)
                     }
                     .padding(.vertical, AppSpacing.sm)
-
-                    if i < min(9, qualifiedSongs.count - 1) {
-                        Divider().opacity(0.07)
-                    }
+                    if i < items.count - 1 { Divider().opacity(0.07) }
                 }
             }
         }

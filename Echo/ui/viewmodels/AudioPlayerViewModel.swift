@@ -242,4 +242,11 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         play(queue[idx - 1])
         currentIndex = idx - 1
     }
+
+    /// Returns all cached TrackFeatures — used by StatsView for artist/album/year/genre breakdowns.
+    /// Only reads what's already on disk; does not trigger extraction.
+    func allFeatures() async -> [TrackFeatures] {
+        await featureStore.load()
+        return await featureStore.allFeatures()
+    }
 }

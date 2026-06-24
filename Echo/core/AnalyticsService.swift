@@ -246,6 +246,24 @@ enum AnalyticsService {
         }
     }
 
+    /// Groups total listening seconds by an arbitrary tag attribute (artist/album/year/genre).
+    /// Songs with a nil or empty attribute value are dropped (not bucketed as "Unknown").
+    /// ponytail: join key is filename — same-named files in different folders collapse together,
+    ///           matching the pre-existing listening-table behaviour; fix by using full URL if ever needed.
+    static func topGroups(
+        listening: [ListeningStat],
+        featureByFile: [String: TrackFeatures],
+        attribute: (TrackFeatures) -> String?
+    ) -> [(name: String, seconds: Double)] {
+        var totals: [String: Double] = [:]
+        for row in listening {
+            guard let f = featureByFile[row.songPath],
+                  let name = attribute(f), !name.isEmpty else { continue }
+            totals[name, default: 0] += row.seconds
+        }
+        return totals.sorted { $0.value > $1.value }.map { (name: $0.key, seconds: $0.value) }
+    }
+
     static func songStats() -> [SongStat] {
         queue.sync {
             guard let db else { return [] }
