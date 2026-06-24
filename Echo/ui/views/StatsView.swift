@@ -23,12 +23,11 @@ struct StatsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.xl) {
                 heroSection
-                if !byDay.isEmpty          { dailyChart }
-                if !qualifiedSongs.isEmpty { rankedList(title: "Top songs",  rows: qualifiedSongs.prefix(10).map { ($0.title, $0.seconds) }) }
-                if !topArtists.isEmpty     { rankedList(title: "Artists",    rows: topArtists.prefix(10)) }
-                if !topAlbums.isEmpty      { rankedList(title: "Albums",     rows: topAlbums.prefix(10)) }
-                if !topYears.isEmpty       { rankedList(title: "Years",      rows: topYears.prefix(10)) }
-                if !topGenres.isEmpty      { rankedList(title: "Genres",     rows: topGenres.prefix(10)) }
+                if !byDay.isEmpty      { dailyChart }
+                if !topArtists.isEmpty { rankedList(title: "Artists", rows: topArtists) }
+                if !topAlbums.isEmpty  { rankedList(title: "Albums",  rows: topAlbums) }
+                if !topYears.isEmpty   { rankedList(title: "Years",   rows: topYears) }
+                if !topGenres.isEmpty  { rankedList(title: "Genres",  rows: topGenres) }
             }
             .padding(AppSpacing.lg)
         }
@@ -42,10 +41,12 @@ struct StatsView: View {
             // ponytail: keyed by filename — matches listening table's song_path
             let byFile = Dictionary(features.map { ($0.songURL.lastPathComponent, $0) },
                                     uniquingKeysWith: { a, _ in a })
-            topArtists = AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.artist }
-            topAlbums  = AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.album }
-            topYears   = AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.year.map(String.init) }
-            topGenres  = AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.genre }
+            let qualify: ([(name: String, seconds: Double)]) -> [(name: String, seconds: Double)] =
+                { $0.filter { $0.seconds >= 3600 }.prefix(10).map { $0 } }
+            topArtists = qualify(AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.artist })
+            topAlbums  = qualify(AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.album })
+            topYears   = qualify(AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.year.map(String.init) })
+            topGenres  = qualify(AnalyticsService.topGroups(listening: listening, featureByFile: byFile) { $0.genre })
         }
     }
 
@@ -114,11 +115,7 @@ struct StatsView: View {
         }
     }
 
-    private var qualifiedSongs: [ListeningStat] {
-        listening.filter { $0.seconds >= 1800 }
-    }
-
-    // MARK: - Ranked list (shared by songs / artists / albums / years / genres)
+    // MARK: - Ranked list
 
     private func rankedList(title: String, rows: some Collection<(name: String, seconds: Double)>) -> some View {
         let items = Array(rows)
