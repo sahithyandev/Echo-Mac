@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build libchromaprint 1.6.0 as a static xcframework for macOS arm64.
+# Build libchromaprint 1.6.0 as a universal static xcframework for macOS (arm64 + x86_64).
 # Run once from the EchoCore/vendor directory; commit the resulting xcframework.
 # Requires: cmake, curl, tar (all standard or brew-installable).
 set -euo pipefail
@@ -23,23 +23,24 @@ fi
 
 tar -xzf "$TARBALL"
 
-# Build arm64 static lib using bundled KissFFT (no FFTW / AVFoundation FFT dep)
-cmake -S "$SRC_DIR" -B "build-arm64" \
+# Build universal static lib using bundled KissFFT (no FFTW / AVFoundation FFT dep)
+cmake -S "$SRC_DIR" -B "build-universal" \
   -DBUILD_TOOLS=OFF \
   -DBUILD_SHARED_LIBS=OFF \
   -DFFT_LIB=kissfft \
-  -DCMAKE_OSX_ARCHITECTURES="arm64" \
+  -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
   -DCMAKE_OSX_DEPLOYMENT_TARGET="15.0" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_FLAGS="-fvisibility=hidden" \
   -DCMAKE_CXX_FLAGS="-fvisibility=hidden"
-cmake --build "build-arm64" --target chromaprint -j"$(sysctl -n hw.logicalcpu)"
+cmake --build "build-universal" --target chromaprint -j"$(sysctl -n hw.logicalcpu)"
 
-# Assemble xcframework manually (avoids needing a .framework wrapper for a static lib)
-HEADERS_DIR="${XCFW}/macos-arm64/Headers"
+# Assemble xcframework with universal (arm64 + x86_64) slice
+SLICE_ID="macos-arm64_x86_64"
+HEADERS_DIR="${XCFW}/${SLICE_ID}/Headers"
 mkdir -p "$HEADERS_DIR"
-cp "build-arm64/src/libchromaprint.a" "${XCFW}/macos-arm64/libchromaprint.a"
-cp "${SRC_DIR}/src/chromaprint.h"     "${HEADERS_DIR}/chromaprint.h"
+cp "build-universal/src/libchromaprint.a" "${XCFW}/${SLICE_ID}/libchromaprint.a"
+cp "${SRC_DIR}/src/chromaprint.h"         "${HEADERS_DIR}/chromaprint.h"
 
 cat > "${HEADERS_DIR}/module.modulemap" <<'MAP'
 module CChromaprint {
@@ -60,11 +61,14 @@ cat > "${XCFW}/Info.plist" <<'PLIST'
       <key>HeadersPath</key>
       <string>Headers</string>
       <key>LibraryIdentifier</key>
-      <string>macos-arm64</string>
+      <string>macos-arm64_x86_64</string>
       <key>LibraryPath</key>
       <string>libchromaprint.a</string>
       <key>SupportedArchitectures</key>
-      <array><string>arm64</string></array>
+      <array>
+        <string>arm64</string>
+        <string>x86_64</string>
+      </array>
       <key>SupportedPlatform</key>
       <string>macos</string>
     </dict>
@@ -77,5 +81,5 @@ cat > "${XCFW}/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-echo "✅  Built ${XCFW}"
+echo "✅  Built ${XCFW} (universal: arm64 + x86_64)"
 echo "   Commit the vendor/ directory to the repo."
