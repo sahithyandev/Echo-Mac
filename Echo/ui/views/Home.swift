@@ -22,7 +22,7 @@ struct Home: View {
         VStack(spacing: 0) {
             if !playerViewModel.recommendations.isEmpty && searchText.isEmpty {
                 RecommendedSongsStrip(songs: playerViewModel.recommendations) { song in
-                    playerViewModel.play(song, in: playerViewModel.queue)
+                    playerViewModel.playFromUpNext(song)
                 }
                 Divider()
             }

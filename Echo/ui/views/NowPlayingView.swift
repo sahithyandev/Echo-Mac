@@ -20,7 +20,7 @@ struct NowPlayingView: View {
 
                 if !playerViewModel.recommendations.isEmpty {
                     RecommendedSongsStrip(songs: playerViewModel.recommendations) { song in
-                        playerViewModel.play(song, in: playerViewModel.queue)
+                        playerViewModel.playFromUpNext(song)
                     }
                     .padding(.top, AppSpacing.sm)
                 }

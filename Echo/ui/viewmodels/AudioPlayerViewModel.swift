@@ -39,7 +39,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     var canPlayPrev: Bool { (currentIndex ?? 0) > 0 }
     var canPlayNext: Bool {
         guard let idx = currentIndex else { return false }
-        return idx < queue.count - 1
+        return isShuffled || idx < queue.count - 1
     }
 
     override init() {
@@ -87,9 +87,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if !queue.isEmpty {
             self.originalQueue = queue
             if isShuffled {
-                var rest = queue.filter { $0.id != song.id }
-                rest.shuffle()
-                self.queue = [song] + rest
+                self.queue = [song]
                 self.currentIndex = 0
             } else {
                 self.queue = queue
@@ -130,6 +128,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     // Called from Home.onAppear to seed recommendations before anything is playing.
     func loadInitialRecommendations(from songs: [Song]) {
         guard recommendations.isEmpty, nowPlaying == nil else { return }
+        if originalQueue.isEmpty { originalQueue = songs }
         Task {
             await featureStore.load()
             await featureStore.ensureFeatures(for: songs.map(\.url), using: featureExtractor)
@@ -185,11 +184,14 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let updated = recs
             .compactMap { rec -> (song: Song, score: Double)? in
                 guard let song = urlToSong[rec.songURL] else { return nil }
-                // ponytail: 0.3 likeability nudge; raise toward 0.5 for more personalization
-                // Key by stableId when available, filename fallback for pre-fingerprint songs.
                 let likeKey   = featuresByURL[rec.songURL]?.stableId ?? rec.songURL.lastPathComponent
                 let likeScore = like[likeKey] ?? 0.5
-                return (song, 0.7 * rec.similarityScore + 0.3 * likeScore)
+                let recency: Double = {
+                    guard let mod = (try? FileManager.default.attributesOfItem(atPath: rec.songURL.path))?[.modificationDate] as? Date else { return 0 }
+                    let days = Date().timeIntervalSince(mod) / 86400
+                    return exp(-days / 7.0)
+                }()
+                return (song, 0.65 * rec.similarityScore + 0.25 * likeScore + 0.10 * recency)
             }
             .sorted { $0.score > $1.score }
             .prefix(5)
@@ -278,20 +280,45 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         isShuffled.toggle()
         guard let current = nowPlaying else { return }
         if isShuffled {
-            var rest = originalQueue.filter { $0.id != current.id }
-            rest.shuffle()
-            queue = [current] + rest
-            currentIndex = 0
+            // Keep history (prev still works); drop the not-yet-played alphabetical tail.
+            queue = Array(queue.prefix((currentIndex ?? 0) + 1))
+            // currentIndex unchanged — still points at the same song
         } else {
             queue = originalQueue
             currentIndex = originalQueue.firstIndex(where: { $0.id == current.id })
         }
     }
 
+    /// User tapped a song in the Up Next strip. Insert it right after the current song
+    /// so history (prev) and any already-queued lookahead are preserved.
+    func playFromUpNext(_ song: Song) {
+        if let idx = currentIndex {
+            queue.insert(song, at: idx + 1)
+            play(song)          // no library arg → queue/originalQueue untouched
+            currentIndex = idx + 1
+        } else {
+            // Cold start: use the full library so prev/next work immediately.
+            // Recommendations are a library subset, so the song is in originalQueue.
+            let lib = originalQueue.isEmpty ? [song] : originalQueue
+            play(song, in: lib)
+            // Guard against the song not being in originalQueue (shouldn't happen).
+            if currentIndex == nil { queue = [song] + queue; currentIndex = 0 }
+        }
+    }
+
     func playNext() {
-        guard let idx = currentIndex, idx < queue.count - 1 else { return }
-        play(queue[idx + 1])
-        currentIndex = idx + 1
+        guard let idx = currentIndex else { return }
+        if idx < queue.count - 1 {
+            play(queue[idx + 1])
+            currentIndex = idx + 1
+        } else if isShuffled {
+            let pool = recommendations.isEmpty ? originalQueue : recommendations
+            let candidates = pool.filter { $0.id != nowPlaying?.id }
+            guard let next = candidates.randomElement() ?? originalQueue.randomElement() else { return }
+            queue.append(next)
+            play(next)
+            currentIndex = idx + 1
+        }
     }
 
     func playPrev() {
