@@ -181,10 +181,12 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             }
             return (s.url, s)
         })
+        let recentIds = PlaybackStore.recentlyPlayedSongIds()
         let updated = recs
             .compactMap { rec -> (song: Song, score: Double)? in
                 guard let song = urlToSong[rec.songURL] else { return nil }
                 let likeKey   = featuresByURL[rec.songURL]?.stableId ?? rec.songURL.lastPathComponent
+                if recentIds.contains(likeKey) { return nil }
                 let likeScore = like[likeKey] ?? 0.5
                 let recency: Double = {
                     guard let mod = (try? FileManager.default.attributesOfItem(atPath: rec.songURL.path))?[.modificationDate] as? Date else { return 0 }

@@ -381,6 +381,31 @@ enum PlaybackStore {
         }
     }
 
+    /// Returns song_ids played within the last `songCount` play events OR `hours` hours (whichever is broader).
+    static func recentlyPlayedSongIds(songCount: Int = 20, hours: Double = 2) -> Set<String> {
+        queue.sync {
+            guard let db else { return [] }
+            var stmt: OpaquePointer?
+            let cutoff = Date().timeIntervalSince1970 - hours * 3600
+            guard sqlite3_prepare_v2(db, """
+                SELECT DISTINCT song_id FROM events WHERE event='play'
+                AND (
+                    timestamp >= \(cutoff)
+                    OR song_id IN (
+                        SELECT song_id FROM events WHERE event='play'
+                        ORDER BY timestamp DESC LIMIT \(songCount)
+                    )
+                )
+            """, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            var ids = Set<String>()
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                ids.insert(String(cString: sqlite3_column_text(stmt, 0)))
+            }
+            return ids
+        }
+    }
+
     /// Returns the song_id (stableId or filename fallback) of the most recently played song.
     static func lastPlayedSongId() -> String? {
         queue.sync {

@@ -40,7 +40,7 @@ The app follows MVVM. The core library lives in the `EchoCore` Swift package (`E
 
 #### `core/`
 
-- **`PlaybackStore.swift`** — Raw SQLite3 analytics store (no third-party ORM). Tracks `events` (play/skip/complete/milestones), `listening` seconds per day, `songs` dimension table (artist/album/year/genre), and `song_paths` for fingerprint reconciliation. Exposes queries for listening totals, per-day history, likeability scores, top artists/albums/genres/years, and library counts.
+- **`PlaybackStore.swift`** — Raw SQLite3 analytics store (no third-party ORM). Tracks `events` (play/skip/complete/milestones), `listening` seconds per day, `songs` dimension table (artist/album/year/genre), and `song_paths` for fingerprint reconciliation. Exposes: `listeningTotals()`, `listeningByDay()`, `listeningDaysBySong(days:)`, `likeabilityScores()`, `recentlyPlayedSongIds(songCount:hours:)`, `lastPlayedSongId()`, `songStats()`, `libraryCounts()`, and `topByArtist/Album/Genre/Year()`.
 - **`models/AppNavigationState.swift`** — `@MainActor ObservableObject`. Holds `currentPage: Page` for app-level navigation.
 - **`models/Page.swift`** — `enum Page`: `.home`, `.nowPlaying`, `.stats`, `.settings`.
 
@@ -48,7 +48,7 @@ The app follows MVVM. The core library lives in the `EchoCore` Swift package (`E
 
 - **`Theme.swift`** — `AppColor` enum with named palette entries backed by asset catalog colors (`navy`, `accent`, `cream`, `tealDark`, `tealLight`).
 - **`ArtworkCache.swift`** — In-memory `NSCache` for decoded `NSImage` artwork, keyed by song URL.
-- **`viewmodels/AudioPlayerViewModel.swift`** — `@MainActor ObservableObject`. Owns `AudioPlayer`, `NowPlayingService`, `FeatureStore`, `FeatureExtractor`, and `SimilarityEngine`. Manages the play queue, shuffle mode, current index, progress polling timer, playback event tracking (milestones + completions), listening-time accrual, fingerprint reconciliation, and recommendations. Publishes `nowPlaying`, `isPlaying`, `progress`, `duration`, `timeRemaining`, `isShuffled`, `recommendations`.
+- **`viewmodels/AudioPlayerViewModel.swift`** — `@MainActor ObservableObject`. Owns `AudioPlayer`, `NowPlayingService`, `FeatureStore`, `FeatureExtractor`, and `SimilarityEngine`. Manages the play queue, shuffle mode (keeps `originalQueue` separate so un-shuffling restores order), current index, progress polling timer, playback event tracking (milestones + completions), listening-time accrual, fingerprint reconciliation, and recommendations. Publishes `nowPlaying`, `isPlaying`, `progress`, `duration`, `timeRemaining`, `isShuffled`, `recommendations`, `canPlayPrev`, `canPlayNext`. Key methods: `play(_:in:)`, `updateLibrary(_:)` (hot-swaps metadata without losing position), `loadInitialRecommendations(from:)` (seeds recommendations from last-played song on launch).
 - **`viewmodels/MusicLibraryViewModel.swift`** — `@MainActor ObservableObject`. Calls `MusicLibrary`, loads ID3 metadata (title/artist/album/artwork) async via `AVURLAsset`, and publishes `songs`.
 - **`views/Root.swift`** — Top-level navigation container; switches between pages using `AppNavigationState`.
 - **`views/Home.swift`** — Song list with `SongRow` thumbnails. Floating `PlayerControlsView` animates in from the bottom when a song is playing. Shows a `RecommendedSongsStrip` when recommendations are available.
