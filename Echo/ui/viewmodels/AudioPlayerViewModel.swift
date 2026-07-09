@@ -159,7 +159,11 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         guard let seed = nowPlaying else { recommendations = []; return }
         let library = originalQueue
         await featureStore.load()
-        await featureStore.ensureFeatures(for: library.map(\.url), using: featureExtractor)
+        // Features are ensured once for the whole library at launch
+        // (loadInitialRecommendations) and on library changes (updateLibrary).
+        // Re-ensuring here on every track change re-stats every song on disk
+        // for nothing — that per-track disk-stat storm was the main CPU/heat
+        // cost during a listening session.
         guard nowPlaying?.id == seed.id else { return }
         await computeRecommendations(seed: seed, library: library)
     }
@@ -246,11 +250,17 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
+                // Idle while paused/stopped: skip the @Published writes and
+                // view re-renders that would otherwise run forever at 2Hz.
+                guard self.isPlaying else { return }
                 let duration = self.player.duration
-                self.duration = duration
+                // Guard the rarely-changing values — every @Published write invalidates
+                // all observing views, even when the value is identical.
+                if self.duration != duration { self.duration = duration }
                 self.progress = duration > 0 ? self.player.currentTime / duration : 0
                 self.timeRemaining = max(0, duration - self.player.currentTime)
-                self.updateSystemNowPlaying()
+                // No updateSystemNowPlaying() here: the system interpolates position
+                // from elapsedTime + playbackRate, so it only needs play/pause/seek/track changes.
                 self.checkMilestones()
                 // Accumulate only real playback time: diff the engine clock each tick.
                 // Gate: forward-only, under 1.5s (seeks produce large jumps, pauses produce 0).
