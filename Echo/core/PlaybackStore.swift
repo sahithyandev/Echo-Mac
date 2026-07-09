@@ -13,7 +13,9 @@ struct SongStat {
 
 // ponytail: raw SQLite3 (built into OS), no GRDB/SQLite.swift dep needed
 enum PlaybackStore {
-    private static let queue = DispatchQueue(label: "echo.playback", qos: .background)
+    // .utility, not .background: main-thread reads queue.sync onto this queue, and
+    // .background is I/O-throttled by the kernel — a classic priority-inversion stall.
+    private static let queue = DispatchQueue(label: "echo.playback", qos: .utility)
     private static let TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     // ponytail: DateFormatter reused; local calendar so day boundaries match the user's timezone
