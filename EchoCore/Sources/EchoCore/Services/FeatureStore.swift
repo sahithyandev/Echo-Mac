@@ -40,18 +40,28 @@ public actor FeatureStore {
     /// Atomic write: Data writes to a temp file, then renames — safe against mid-write crashes.
     public func save(_ features: TrackFeatures) throws {
         cache[features.songURL.absoluteString] = features
+        try persist()
+    }
+
+    private func persist() throws {
         let data = try JSONEncoder().encode(cache)
         try data.write(to: storeURL, options: .atomic)
     }
 
     /// For each URL not in cache (or stale), runs extraction and saves the result.
     /// Errors on individual songs are silently skipped so one bad file doesn't abort the batch.
+    /// Persists every 10 extractions (not per song) so a large import doesn't rewrite
+    /// the growing store file N times, while a crash mid-batch loses at most 10 songs' work.
     public func ensureFeatures(for urls: [URL], using extractor: FeatureExtractor) async {
+        var pending = 0
         for url in urls {
             guard features(for: url) == nil else { continue }
             guard let extracted = try? await extractor.extract(from: url) else { continue }
-            try? save(extracted)
+            cache[extracted.songURL.absoluteString] = extracted
+            pending += 1
+            if pending >= 10 { try? persist(); pending = 0 }
         }
+        if pending > 0 { try? persist() }
     }
 
     /// Returns all cached entries — used by the similarity engine to build the feature library.
