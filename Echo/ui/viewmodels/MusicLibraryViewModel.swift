@@ -41,7 +41,7 @@ class MusicLibraryViewModel: ObservableObject {
                 case .commonKeyAlbumName:
                     album = try? await item.load(.stringValue)
                 case .commonKeyArtwork:
-                    if let data = try? await item.load(.dataValue), let image = NSImage(data: data) {
+                    if let data = try? await item.load(.dataValue), let image = ArtworkCache.decode(data) {
                         ArtworkCache.shared.set(image, for: url)
                     }
                 default:

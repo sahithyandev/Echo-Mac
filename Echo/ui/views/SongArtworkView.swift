@@ -55,7 +55,7 @@ struct SongArtworkView: View {
         for item in items {
             guard item.commonKey == .commonKeyArtwork else { continue }
             guard let data = try? await item.load(.dataValue) else { continue }
-            guard let image = NSImage(data: data) else { continue }
+            guard let image = ArtworkCache.decode(data) else { continue }
             ArtworkCache.shared.set(image, for: url)
             return image
         }
