@@ -32,6 +32,10 @@ enum PlaybackStore {
               let db = handle else { return nil }
 
         for sql in [
+            // WAL + NORMAL: writers don't block readers, and frequent event/listening
+            // inserts skip the per-commit full fsync (WAL is still crash-safe at NORMAL).
+            "PRAGMA journal_mode=WAL",
+            "PRAGMA synchronous=NORMAL",
             // songs: one row per stable identity; artist/album/year/genre enable direct SQL grouping
             """
             CREATE TABLE IF NOT EXISTS songs (
