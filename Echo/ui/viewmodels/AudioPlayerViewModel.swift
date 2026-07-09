@@ -169,7 +169,10 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let allFeatures = await featureStore.allFeatures()
         // Pull a larger pool so likeability re-rank has room to work before truncation
         let recs = similarityEngine.recommendations(for: seedFeatures, from: allFeatures, count: 20)
-        let like = PlaybackStore.likeabilityScores()
+        // Both hit SQLite via queue.sync — hop off the MainActor so the UI doesn't block.
+        let (like, recentIds) = await Task.detached(priority: .userInitiated) {
+            (PlaybackStore.likeabilityScores(), PlaybackStore.recentlyPlayedSongIds())
+        }.value
         // Feature store has authoritative ID3 metadata; backfill onto Song in case
         // MusicLibraryViewModel.loadMetadata() hadn't finished when play() was called.
         let featuresByURL = Dictionary(uniqueKeysWithValues: allFeatures.map { ($0.songURL, $0) })
@@ -181,7 +184,6 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             }
             return (s.url, s)
         })
-        let recentIds = PlaybackStore.recentlyPlayedSongIds()
         let updated = recs
             .compactMap { rec -> (song: Song, score: Double)? in
                 guard let song = urlToSong[rec.songURL] else { return nil }

@@ -31,13 +31,24 @@ struct StatsView: View {
         }
         .navigationTitle("Stats")
         .task {
-            counts    = PlaybackStore.libraryCounts()
-        totals    = PlaybackStore.listeningTotals()
-            byDay     = makeDayPoints(PlaybackStore.listeningByDay().reversed())
-            topArtists = PlaybackStore.topByArtist()
-            topAlbums  = PlaybackStore.topByAlbum()
-            topYears   = PlaybackStore.topByYear()
-            topGenres  = PlaybackStore.topByGenre()
+            // All of these are queue.sync SQLite aggregations — run them off the
+            // MainActor so opening Stats doesn't freeze the UI, then publish once.
+            let stats = await Task.detached(priority: .userInitiated) {
+                (counts: PlaybackStore.libraryCounts(),
+                 totals: PlaybackStore.listeningTotals(),
+                 byDay: PlaybackStore.listeningByDay(),
+                 artists: PlaybackStore.topByArtist(),
+                 albums: PlaybackStore.topByAlbum(),
+                 years: PlaybackStore.topByYear(),
+                 genres: PlaybackStore.topByGenre())
+            }.value
+            counts     = stats.counts
+            totals     = stats.totals
+            byDay      = makeDayPoints(stats.byDay.reversed())
+            topArtists = stats.artists
+            topAlbums  = stats.albums
+            topYears   = stats.years
+            topGenres  = stats.genres
         }
     }
 
