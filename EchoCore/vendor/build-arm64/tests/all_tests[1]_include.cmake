@@ -1,5 +1,0 @@
-if(EXISTS "/Users/sahithyan/work/Echo/EchoCore/vendor/build-arm64/tests/all_tests[1]_tests.cmake")
-  include("/Users/sahithyan/work/Echo/EchoCore/vendor/build-arm64/tests/all_tests[1]_tests.cmake")
-else()
-  add_test(all_tests_NOT_BUILT all_tests_NOT_BUILT)
-endif()
