@@ -2,6 +2,11 @@
 
 A macOS music player built with SwiftUI.
 
+## License
+
+MIT (see `LICENSE`). Statically links Chromaprint (LGPL-2.1) — see
+`THIRD_PARTY_LICENSES.md` for compliance details.
+
 ## Requirements
 
 - macOS 26.5+
