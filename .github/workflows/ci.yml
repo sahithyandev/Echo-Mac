@@ -15,3 +15,4 @@ jobs:
           xcode-version: latest-stable
       - run: xcodebuild -project Echo.xcodeproj -scheme Echo -configuration Debug build
       - run: xcodebuild -project Echo.xcodeproj -scheme Echo -configuration Debug test
+      - run: swift test --package-path EchoCore
