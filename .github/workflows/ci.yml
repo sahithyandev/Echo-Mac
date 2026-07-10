@@ -1,4 +1,4 @@
-name: CI
+name: CI & Release
 
 on:
   push:
@@ -16,3 +16,55 @@ jobs:
       - run: xcodebuild -project Echo.xcodeproj -scheme Echo -configuration Debug build
       - run: xcodebuild -project Echo.xcodeproj -scheme Echo -configuration Debug test
       - run: swift test --package-path EchoCore
+
+  tag:
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      created: ${{ steps.tag.outputs.created }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: tag
+        run: |
+          v="v$(cat VERSION)"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "$v" >/dev/null 2>&1; then
+            echo "$v already exists, skipping release"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git tag "$v"
+          git push origin "$v"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: tag
+    if: needs.tag.outputs.created == 'true'
+    runs-on: macos-26
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - run: xcodebuild -project Echo.xcodeproj -scheme Echo -configuration Release -derivedDataPath build build
+      - run: ditto -c -k --keepParent build/Build/Products/Release/Echo.app Echo-${{ needs.tag.outputs.version }}.zip
+      # Extract this version's section from CHANGELOG.md (between its heading
+      # and the next `## `). Falls back to auto-generated notes if empty.
+      - id: notes
+        run: |
+          awk -v v="## $(cat VERSION)" '
+            $0==v {f=1; next} f && /^## / {exit} f {print}
+          ' CHANGELOG.md > notes.md
+          [ -s notes.md ] && echo "have=true" >> "$GITHUB_OUTPUT" || echo "have=false" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.tag.outputs.version }}
+          files: Echo-${{ needs.tag.outputs.version }}.zip
+          body_path: ${{ steps.notes.outputs.have == 'true' && 'notes.md' || '' }}
+          generate_release_notes: ${{ steps.notes.outputs.have != 'true' }}
