@@ -34,10 +34,9 @@ struct Scrubber: View {
                         .fill(.white)
                         .frame(width: trackHeight * 3.5, height: trackHeight * 3.5)
                         .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
-                        .offset(x: fill - trackHeight * 1.75)
                         .opacity((alwaysShowThumb || isScrubbing) ? 1 : 0)
                         .scaleEffect(isScrubbing ? 1.2 : 1)
-                        .animation(.easeInOut(duration: 0.15), value: isScrubbing)
+                        .offset(x: fill - trackHeight * 1.75)
                 }
                 .frame(height: trackHeight * 3.5)
                 .contentShape(Rectangle())
@@ -48,8 +47,10 @@ struct Scrubber: View {
                             isScrubbing = true
                         }
                         .onEnded { v in
-                            onSeek((v.location.x / w).clamped(to: 0...1) * duration)
-                            isScrubbing = false
+                            isScrubbing = true
+                            scrubProgress = (v.location.x / w).clamped(to: 0...1)
+                            onSeek(scrubProgress * duration)
+                            DispatchQueue.main.async { isScrubbing = false }
                         }
                 )
             }

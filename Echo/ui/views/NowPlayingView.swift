@@ -15,7 +15,6 @@ struct NowPlayingView: View {
                     duration: playerViewModel.duration,
                     onSeek: { playerViewModel.seek(to: $0) }
                 )
-                .matchedGeometryEffect(id: "heroScrubber", in: namespace)
                 playbackControls
 
                 if !playerViewModel.recommendations.isEmpty {

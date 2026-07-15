@@ -97,7 +97,6 @@ struct PlayerControlsView: View {
                 showTimeLabels: false,
                 alwaysShowThumb: false
             )
-            .matchedGeometryEffect(id: "heroScrubber", in: namespace)
             .padding(.horizontal, AppSpacing.md)
             .padding(.bottom, AppSpacing.sm)
         }
