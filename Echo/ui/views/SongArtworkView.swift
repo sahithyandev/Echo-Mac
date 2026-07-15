@@ -1,7 +1,6 @@
 import SwiftUI
 import AVFoundation
 import AppKit
-import EchoCore
 
 // ponytail: limits concurrent AVURLAsset disk reads to prevent I/O contention on initial load
 private actor LoadThrottle {

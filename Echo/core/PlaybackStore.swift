@@ -1,6 +1,5 @@
 import Foundation
 import SQLite3
-import EchoCore
 
 struct SongStat {
     // song_id: chromaprint stableId when available, filename fallback for pre-fingerprint songs

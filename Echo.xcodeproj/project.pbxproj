@@ -7,23 +7,34 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		3E8C93822FE79C630071F852 /* EchoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3E8C93812FE79C630071F852 /* EchoCore */; };
+		3E8C93832FE79C630071F852 /* Chromaprint.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3E8C93842FE79C630071F852 /* Chromaprint.xcframework */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		6C0DDE92A070B1D7836BE255 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 3E44CB112FE1873B003B7636 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3E44CB182FE1873B003B7636;
+			remoteInfo = Echo;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		3E44CB192FE1873B003B7636 /* Echo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Echo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5245ABE4F8C019CFC9999348 /* EchoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EchoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3E8C93842FE79C630071F852 /* Chromaprint.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = Chromaprint.xcframework; path = vendor/Chromaprint.xcframework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		3E44CB1B2FE1873B003B7636 /* Echo */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Echo;
-			sourceTree = "<group>";
-		};
 		340AAFB6FD503125B30FC31B /* EchoTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = EchoTests;
+			sourceTree = "<group>";
+		};
+		3E44CB1B2FE1873B003B7636 /* Echo */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Echo;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -33,7 +44,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3E8C93822FE79C630071F852 /* EchoCore in Frameworks */,
+				3E8C93832FE79C630071F852 /* Chromaprint.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -53,6 +64,7 @@
 				3E44CB1B2FE1873B003B7636 /* Echo */,
 				340AAFB6FD503125B30FC31B /* EchoTests */,
 				3E44CB1A2FE1873B003B7636 /* Products */,
+				3E8C93842FE79C630071F852 /* Chromaprint.xcframework */,
 			);
 			sourceTree = "<group>";
 		};
@@ -84,9 +96,6 @@
 				3E44CB1B2FE1873B003B7636 /* Echo */,
 			);
 			name = Echo;
-			packageProductDependencies = (
-				3E8C93812FE79C630071F852 /* EchoCore */,
-			);
 			productName = Echo;
 			productReference = 3E44CB192FE1873B003B7636 /* Echo.app */;
 			productType = "com.apple.product-type.application";
@@ -139,9 +148,6 @@
 			);
 			mainGroup = 3E44CB102FE1873B003B7636;
 			minimizedProjectReferenceProxies = 1;
-			packageReferences = (
-				3E8C93802FE79C630071F852 /* XCLocalSwiftPackageReference "EchoCore" */,
-			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3E44CB1A2FE1873B003B7636 /* Products */;
 			projectDirPath = "";
@@ -152,24 +158,6 @@
 			);
 		};
 /* End PBXProject section */
-
-/* Begin PBXTargetDependency section */
-		A4AB15F54FE4F2D649D9D3C7 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 3E44CB182FE1873B003B7636 /* Echo */;
-			targetProxy = 6C0DDE92A070B1D7836BE255 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
-/* Begin PBXContainerItemProxy section */
-		6C0DDE92A070B1D7836BE255 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 3E44CB112FE1873B003B7636 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 3E44CB182FE1873B003B7636;
-			remoteInfo = Echo;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXResourcesBuildPhase section */
 		3E44CB172FE1873B003B7636 /* Resources */ = {
@@ -198,7 +186,31 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		A4AB15F54FE4F2D649D9D3C7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3E44CB182FE1873B003B7636 /* Echo */;
+			targetProxy = 6C0DDE92A070B1D7836BE255 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		3DFBCF9B0B4A6311362F2B23 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.sahithyan.EchoTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Echo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Echo";
+			};
+			name = Debug;
+		};
 		3E44CB222FE1873B003B7636 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -298,9 +310,9 @@
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
-				EXCLUDED_ARCHS = x86_64;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				EXCLUDED_ARCHS = x86_64;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -348,6 +360,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "-lc++";
 				PRODUCT_BUNDLE_IDENTIFIER = dev.sahithyan.Echo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -366,7 +379,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				EXCLUDED_ARCHS = x86_64;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = YES;
@@ -383,6 +395,7 @@
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -391,6 +404,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "-lc++";
 				PRODUCT_BUNDLE_IDENTIFIER = dev.sahithyan.Echo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -402,22 +416,6 @@
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
-		};
-		3DFBCF9B0B4A6311362F2B23 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.sahithyan.EchoTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Echo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Echo";
-			};
-			name = Debug;
 		};
 		62CF4DC0B22BD4F380367772 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -438,6 +436,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		18360845D8C8CBBF275AE205 /* Build configuration list for PBXNativeTarget "EchoTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3DFBCF9B0B4A6311362F2B23 /* Debug */,
+				62CF4DC0B22BD4F380367772 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		3E44CB142FE1873B003B7636 /* Build configuration list for PBXProject "Echo" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -456,30 +463,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		18360845D8C8CBBF275AE205 /* Build configuration list for PBXNativeTarget "EchoTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				3DFBCF9B0B4A6311362F2B23 /* Debug */,
-				62CF4DC0B22BD4F380367772 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 /* End XCConfigurationList section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		3E8C93802FE79C630071F852 /* XCLocalSwiftPackageReference "EchoCore" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = EchoCore;
-		};
-/* End XCLocalSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		3E8C93812FE79C630071F852 /* EchoCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = EchoCore;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 3E44CB112FE1873B003B7636 /* Project object */;
 }

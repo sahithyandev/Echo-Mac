@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import EchoCore
+@testable import Echo
 
 @Suite("EchoCore")
 struct EchoCoreTests {
@@ -182,7 +182,7 @@ struct SimilarityEngineTests {
 @Suite("FeatureStore")
 struct FeatureStoreTests {
     private func tempStoreURL() -> URL {
-        URL(fileURLWithPath: "/tmp/echocore-test-\(UUID()).json")
+        FileManager.default.temporaryDirectory.appendingPathComponent("echocore-test-\(UUID()).json")
     }
 
     @Test("save and reload persists features")

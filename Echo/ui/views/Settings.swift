@@ -1,4 +1,3 @@
-import EchoCore
 import SwiftUI
 
 struct Settings: View {

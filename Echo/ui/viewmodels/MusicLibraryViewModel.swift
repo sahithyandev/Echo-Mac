@@ -2,7 +2,6 @@ import Foundation
 import AppKit
 import AVFoundation
 import Combine
-import EchoCore
 
 @MainActor
 class MusicLibraryViewModel: ObservableObject {

@@ -1,5 +1,4 @@
 import SwiftUI
-import EchoCore
 
 struct PlayerControlsView: View {
     @ObservedObject var playerViewModel: AudioPlayerViewModel

@@ -1,5 +1,4 @@
 import SwiftUI
-import EchoCore
 
 struct SongRow: View {
     let song: Song

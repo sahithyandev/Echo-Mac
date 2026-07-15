@@ -1,5 +1,4 @@
 import SwiftUI
-import EchoCore
 
 struct RecommendedSongsStrip: View {
     let songs: [Song]
