@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0
+
+**Features**
+- Albums and Artists pages
+- Library scan now searches subdirectories recursively for music files, not just the top-level folder
+- Rescan Library button in Settings to manually refresh the library
+
+**Fixes**
+- Progress scrubber animation glitch during playback
+
+**Internal**
+- Merged EchoCore package into Echo for easier maintenance 
+
 ## 0.0.1
 
 Initial release. Echo is a native macOS music player that reads MP3s from `~/Music`, with no import step and no separate library database to manage.
