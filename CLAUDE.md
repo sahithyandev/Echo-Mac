@@ -21,28 +21,26 @@ xcodebuild -project Echo.xcodeproj -scheme Echo -configuration Debug test
 
 ## Architecture
 
-The app follows MVVM. The core library lives in the `EchoCore` Swift package (`EchoCore/`); the app target (`Echo/`) owns all SwiftUI concerns.
-
-### EchoCore package (`EchoCore/Sources/EchoCore/`)
-
-- **`Models/Song.swift`** — `Song` struct with `id`, `url`, `title`, `artist`, `album`, `artwork`.
-- **`Models/TrackFeatures.swift`** — Audio features extracted per track: `stableId` (Chromaprint fingerprint), BPM, key, energy, valence, artist/album/year/genre tags.
-- **`Models/Recommendation.swift`** — Wraps a `Song` with a similarity `score`.
-- **`Services/AudioPlayer.swift`** — Thin `AVAudioPlayer` wrapper: `play(_:)`, `pause()`, `resume()`, `seek(to:)`. Exposes `isPlaying`, `currentTime`, `duration`.
-- **`Services/MusicLibrary.swift`** — `songs(in:)` scans a directory for `.mp3` files and returns them sorted alphabetically.
-- **`Services/NowPlayingService.swift`** — Registers handlers on `MPRemoteCommandCenter` (play/pause, next/prev, seek) and updates `MPNowPlayingInfoCenter` including async artwork loading.
-- **`Services/Fingerprinter.swift`** — Chromaprint-based acoustic fingerprinting; produces a stable `stableId` per track regardless of filename or metadata.
-- **`Services/FeatureExtractor.swift`** — Extracts `TrackFeatures` (fingerprint + ID3 metadata) from an audio file URL.
-- **`Services/FeatureStore.swift`** — On-disk cache of `TrackFeatures`, keyed by URL. Loads lazily and persists to disk.
-- **`Services/SimilarityEngine.swift`** — Cosine-similarity ranking over `TrackFeatures` vectors; used to generate recommendations.
+The app follows MVVM. Everything lives in the `Echo/` app target — the `core/` directory holds models and services (no SwiftUI dependency), `ui/` owns all SwiftUI concerns.
 
 ### App layer (`Echo/`)
 
 #### `core/`
 
 - **`PlaybackStore.swift`** — Raw SQLite3 analytics store (no third-party ORM). Tracks `events` (play/skip/complete/milestones), `listening` seconds per day, `songs` dimension table (artist/album/year/genre), and `song_paths` for fingerprint reconciliation. Exposes: `listeningTotals()`, `listeningByDay()`, `listeningDaysBySong(days:)`, `likeabilityScores()`, `recentlyPlayedSongIds(songCount:hours:)`, `lastPlayedSongId()`, `songStats()`, `libraryCounts()`, and `topByArtist/Album/Genre/Year()`.
+- **`models/Song.swift`** — `Song` struct with `id`, `url`, `title`, `artist`, `album`, `artwork`.
+- **`models/TrackFeatures.swift`** — Audio features extracted per track: `stableId` (Chromaprint fingerprint), BPM, key, energy, valence, artist/album/year/genre tags.
+- **`models/Recommendation.swift`** — Wraps a `Song` with a similarity `score`.
 - **`models/AppNavigationState.swift`** — `@MainActor ObservableObject`. Holds `currentPage: Page` for app-level navigation.
 - **`models/Page.swift`** — `enum Page`: `.home`, `.nowPlaying`, `.stats`, `.settings`.
+- **`services/AudioPlayer.swift`** — Thin `AVAudioPlayer` wrapper: `play(_:)`, `pause()`, `resume()`, `seek(to:)`. Exposes `isPlaying`, `currentTime`, `duration`.
+- **`services/MusicLibrary.swift`** — `songs(in:)` recursively scans a directory for `.mp3` files and returns them sorted alphabetically.
+- **`services/NowPlayingService.swift`** — Registers handlers on `MPRemoteCommandCenter` (play/pause, next/prev, seek) and updates `MPNowPlayingInfoCenter` including async artwork loading.
+- **`services/Fingerprinter.swift`** — Chromaprint-based acoustic fingerprinting; produces a stable `stableId` per track regardless of filename or metadata.
+- **`services/FeatureExtractor.swift`** — Extracts `TrackFeatures` (fingerprint + ID3 metadata) from an audio file URL.
+- **`services/FeatureStore.swift`** — On-disk cache of `TrackFeatures`, keyed by URL. Loads lazily and persists to disk.
+- **`services/SimilarityEngine.swift`** — Cosine-similarity ranking over `TrackFeatures` vectors; used to generate recommendations.
+- **`services/RecommendationEngine.swift`** — Orchestrates feature extraction, storage, and similarity ranking to produce recommendations for a song.
 
 #### `ui/`
 

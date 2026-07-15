@@ -35,27 +35,24 @@ Open `Echo.xcodeproj` in Xcode and run with ⌘R.
 ## Project Structure
 
 ```
-EchoCore/                           # Swift package — no SwiftUI dependency
-└── Sources/EchoCore/
-    ├── Models/
-    │   ├── Song.swift              # Song data model (title, artist, album, artwork)
-    │   ├── TrackFeatures.swift     # Acoustic features + ID3 metadata per track
-    │   └── Recommendation.swift   # Song + similarity score
-    └── Services/
-        ├── AudioPlayer.swift       # AVAudioPlayer wrapper (play/pause/seek)
-        ├── MusicLibrary.swift      # Scans directory for MP3s
-        ├── NowPlayingService.swift # MPRemoteCommandCenter + MPNowPlayingInfoCenter
-        ├── Fingerprinter.swift     # Chromaprint acoustic fingerprinting
-        ├── FeatureExtractor.swift  # Extracts TrackFeatures from a URL
-        ├── FeatureStore.swift      # On-disk TrackFeatures cache
-        └── SimilarityEngine.swift  # Cosine-similarity recommendations
-
 Echo/                               # App target
 ├── core/
 │   ├── PlaybackStore.swift         # SQLite analytics (events, listening, songs, paths)
-│   └── models/
-│       ├── AppNavigationState.swift # App-level navigation state
-│       └── Page.swift              # Page enum (home/nowPlaying/stats/settings)
+│   ├── models/
+│   │   ├── Song.swift              # Song data model (title, artist, album, artwork)
+│   │   ├── TrackFeatures.swift     # Acoustic features + ID3 metadata per track
+│   │   ├── Recommendation.swift    # Song + similarity score
+│   │   ├── AppNavigationState.swift # App-level navigation state
+│   │   └── Page.swift              # Page enum (home/nowPlaying/stats/settings)
+│   └── services/
+│       ├── AudioPlayer.swift       # AVAudioPlayer wrapper (play/pause/seek)
+│       ├── MusicLibrary.swift      # Scans directory for MP3s
+│       ├── NowPlayingService.swift # MPRemoteCommandCenter + MPNowPlayingInfoCenter
+│       ├── Fingerprinter.swift     # Chromaprint acoustic fingerprinting
+│       ├── FeatureExtractor.swift  # Extracts TrackFeatures from a URL
+│       ├── FeatureStore.swift      # On-disk TrackFeatures cache
+│       ├── SimilarityEngine.swift  # Cosine-similarity recommendations
+│       └── RecommendationEngine.swift # Recommendation pipeline orchestration
 └── ui/
     ├── Theme.swift                 # AppColor palette
     ├── ArtworkCache.swift          # NSCache for decoded artwork images

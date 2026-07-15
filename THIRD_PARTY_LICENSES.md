@@ -5,11 +5,11 @@ third-party library:
 
 ## Chromaprint
 
-- **Used for:** acoustic fingerprinting (`EchoCore/Sources/EchoCore/Services/Fingerprinter.swift`)
+- **Used for:** acoustic fingerprinting (`Echo/core/services/Fingerprinter.swift`)
 - **License:** GNU Lesser General Public License v2.1 (LGPL-2.1)
 - **Source:** https://github.com/acoustid/chromaprint
-- **Vendored as:** `EchoCore/vendor/Chromaprint.xcframework`, a static library
-  built by `EchoCore/vendor/build-chromaprint.sh` from unmodified upstream
+- **Vendored as:** `vendor/Chromaprint.xcframework`, a static library
+  built by `vendor/build-chromaprint.sh` from unmodified upstream
   source (version 1.6.0).
 
 Echo statically links `libchromaprint.a` rather than linking dynamically. To
@@ -17,7 +17,7 @@ stay compliant with the LGPL-2.1's static-linking terms, Echo provides the
 means to relink the app against a modified version of Chromaprint:
 
 - The exact unmodified Chromaprint source used to build the vendored library
-  is fetched by `EchoCore/vendor/build-chromaprint.sh` (pinned to v1.6.0 via
+  is fetched by `vendor/build-chromaprint.sh` (pinned to v1.6.0 via
   the upstream GitHub release tarball) — nothing is patched.
 - Echo's own object files are not obfuscated or license-restricted beyond
   the MIT license above; anyone may rebuild `Chromaprint.xcframework` from a
