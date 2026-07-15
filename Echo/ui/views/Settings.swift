@@ -3,6 +3,7 @@ import SwiftUI
 struct Settings: View {
     @AppStorage("libraryDirectory") private var libraryPath: String = "/Users/\(NSUserName())/Music"
     @EnvironmentObject private var playerViewModel: AudioPlayerViewModel
+    @EnvironmentObject private var libraryViewModel: MusicLibraryViewModel
     // Each element is a group of tracks sharing the same stableId (i.e. same recording).
     @State private var duplicateGroups: [[TrackFeatures]] = []
 
@@ -17,6 +18,9 @@ struct Settings: View {
                             .truncationMode(.middle)
                         Button("Choose…") { pickFolder() }
                     }
+                }
+                Button("Rescan Library") {
+                    libraryViewModel.load(from: URL(fileURLWithPath: libraryPath))
                 }
             }
 
@@ -90,4 +94,5 @@ struct Settings: View {
 #Preview {
     Settings()
         .environmentObject(AudioPlayerViewModel())
+        .environmentObject(MusicLibraryViewModel())
 }

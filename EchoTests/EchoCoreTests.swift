@@ -12,6 +12,25 @@ struct EchoCoreTests {
     }
 }
 
+@Suite("MusicLibrary")
+struct MusicLibraryTests {
+    @Test("songs(in:) recurses into subdirectories")
+    func recursesIntoSubdirectories() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("musiclibrary-test-\(UUID())")
+        let nested = root.appendingPathComponent("Artist/Album")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        FileManager.default.createFile(atPath: root.appendingPathComponent("top.mp3").path, contents: Data())
+        FileManager.default.createFile(atPath: nested.appendingPathComponent("nested.mp3").path, contents: Data())
+        FileManager.default.createFile(atPath: nested.appendingPathComponent("ignore.txt").path, contents: Data())
+
+        let songs = try MusicLibrary().songs(in: root)
+
+        #expect(songs.map(\.title).sorted() == ["nested", "top"])
+    }
+}
+
 @Suite("FeatureExtractor")
 struct FeatureExtractorTests {
     @Test("parseKey handles major keys")
