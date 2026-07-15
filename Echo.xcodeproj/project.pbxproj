@@ -22,8 +22,8 @@
 
 /* Begin PBXFileReference section */
 		3E44CB192FE1873B003B7636 /* Echo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Echo.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		5245ABE4F8C019CFC9999348 /* EchoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EchoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3E8C93842FE79C630071F852 /* Chromaprint.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = Chromaprint.xcframework; path = vendor/Chromaprint.xcframework; sourceTree = "<group>"; };
+		5245ABE4F8C019CFC9999348 /* EchoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EchoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */

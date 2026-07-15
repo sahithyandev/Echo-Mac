@@ -28,6 +28,12 @@ struct Root: View {
                 Label("Stats", systemImage: "chart.bar")
                     .tag(Page.stats)
 
+                Label("Albums", systemImage: "square.stack")
+                    .tag(Page.albums)
+
+                Label("Artists", systemImage: "music.mic")
+                    .tag(Page.artists)
+
                 Label("Settings", systemImage: "gear")
                     .tag(Page.settings)
             }
@@ -39,6 +45,14 @@ struct Root: View {
                 StatsView()
             case .settings:
                 Settings()
+            case .albums:
+                AlbumsView(libraryViewModel: libraryViewModel, playerViewModel: playerViewModel)
+            case .artists:
+                ArtistsView(libraryViewModel: libraryViewModel, playerViewModel: playerViewModel)
+            case .album(let name):
+                AlbumDetailView(album: name, libraryViewModel: libraryViewModel, playerViewModel: playerViewModel)
+            case .artist(let name):
+                ArtistDetailView(artist: name, libraryViewModel: libraryViewModel, playerViewModel: playerViewModel)
             default:
                 Home(libraryViewModel: libraryViewModel, playerViewModel: playerViewModel)
             }

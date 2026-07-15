@@ -10,6 +10,20 @@ class MusicLibraryViewModel: ObservableObject {
 
     private let library = MusicLibrary()
 
+    func songs(inAlbum name: String) -> [Song] {
+        songs.filter { ($0.album ?? "Unknown Album") == name }
+    }
+
+    func songs(byArtist name: String) -> [Song] {
+        songs.filter { artistNames(for: $0).contains(name) }
+    }
+
+    func artistNames(for song: Song) -> [String] {
+        guard let raw = song.artist, !raw.isEmpty else { return ["Unknown Artist"] }
+        let names = PlaybackStore.splitArtists(raw)
+        return names.isEmpty ? ["Unknown Artist"] : names
+    }
+
     func load(from directoryURL: URL) {
         do {
             songs = try library.songs(in: directoryURL)

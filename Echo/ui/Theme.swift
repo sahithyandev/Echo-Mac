@@ -26,6 +26,11 @@ enum AppRadius {
     static let lg: CGFloat = 16
 }
 
+// Number of adaptive grid columns that fit `width` given an item's min width and spacing.
+func gridColumnCount(width: CGFloat, minItemWidth: CGFloat, spacing: CGFloat) -> Int {
+    max(1, Int((width + spacing) / (minItemWidth + spacing)))
+}
+
 extension Font {
     // Rounded numerals read as the "data face" — gives stats a distinct personality.
     static let appTitle    = Font.system(.title2,   design: .rounded).weight(.bold)

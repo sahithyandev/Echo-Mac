@@ -12,5 +12,9 @@ enum Page: Hashable {
     case nowPlaying
     case stats
     case settings
+    case albums
+    case artists
+    case album(String)   // album name
+    case artist(String)  // artist name
 }
 
