@@ -127,9 +127,12 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     }
 
-    // Called from Home.onAppear to seed recommendations before anything is playing.
-    func loadInitialRecommendations(from songs: [Song]) {
-        guard recommendations.isEmpty, nowPlaying == nil else { return }
+    // Called from Home.onAppear (and when the library picker changes) to seed
+    // recommendations before anything is playing. `libraryId` nil = no picker
+    // filter applied (all libraries); pass it to scope the seed lookup to just
+    // that library so recs don't come from wherever was last played globally.
+    func loadInitialRecommendations(from songs: [Song], libraryId: String? = nil) {
+        guard nowPlaying == nil else { return }
         if originalQueue.isEmpty { originalQueue = songs }
         Task {
             await featureStore.load()
@@ -139,21 +142,28 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             // Populate artist/album/year/genre for migrated songs that have no metadata yet in playback.db
             PlaybackStore.backfillSongMetadata(allFeatures)
 
+            let scopedSongs = libraryId == nil ? songs : songs.filter { $0.libraryId == libraryId }
             let filenameToStableId = Dictionary(
                 allFeatures.compactMap { f -> (String, String)? in
                     f.stableId.map { (f.songURL.lastPathComponent, $0) }
                 },
                 uniquingKeysWith: { a, _ in a }
             )
-            guard let lastId = PlaybackStore.lastPlayedSongId() else { return }
-            let seed = songs.first(where: { f in
+            guard let lastId = PlaybackStore.lastPlayedSongId(libraryId: libraryId) else {
+                recommendations = []
+                return
+            }
+            let seed = scopedSongs.first(where: { f in
                 guard let sid = filenameToStableId[f.url.lastPathComponent] else {
                     return f.url.lastPathComponent == lastId
                 }
                 return sid == lastId
             })
-            guard let seed else { return }
-            await computeRecommendations(seed: seed, library: songs)
+            guard let seed else {
+                recommendations = []
+                return
+            }
+            await computeRecommendations(seed: seed, library: scopedSongs)
         }
     }
 
@@ -172,7 +182,13 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     private func computeRecommendations(seed: Song, library: [Song]) async {
         guard let seedFeatures = await featureStore.features(for: seed.url) else { return }
-        let allFeatures = await featureStore.allFeatures()
+        // Scope candidates to the seed's own library — `library` may be the full
+        // multi-library aggregate (loadInitialRecommendations) or a stale queue left
+        // over from before the user switched libraries, so filter by libraryId rather
+        // than trusting the passed-in list's membership.
+        let sameLibrary = seed.libraryId == nil ? library : library.filter { $0.libraryId == seed.libraryId }
+        let libraryURLs = Set(sameLibrary.map(\.url))
+        let allFeatures = await featureStore.allFeatures().filter { libraryURLs.contains($0.songURL) }
         // Pull a larger pool so likeability re-rank has room to work before truncation
         let recs = similarityEngine.recommendations(for: seedFeatures, from: allFeatures, count: 20)
         // Both hit SQLite via queue.sync — hop off the MainActor so the UI doesn't block.
@@ -182,7 +198,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         // Feature store has authoritative ID3 metadata; backfill onto Song in case
         // MusicLibraryViewModel.loadMetadata() hadn't finished when play() was called.
         let featuresByURL = Dictionary(uniqueKeysWithValues: allFeatures.map { ($0.songURL, $0) })
-        let urlToSong = Dictionary(uniqueKeysWithValues: library.map { song -> (URL, Song) in
+        let urlToSong = Dictionary(uniqueKeysWithValues: sameLibrary.map { song -> (URL, Song) in
             var s = song
             if let f = featuresByURL[song.url] {
                 s.artist = f.artist ?? s.artist

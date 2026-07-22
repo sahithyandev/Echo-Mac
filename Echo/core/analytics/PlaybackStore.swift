@@ -502,14 +502,17 @@ enum PlaybackStore {
     }
 
     /// Returns the song_id (stableId or filename fallback) of the most recently played song.
-    static func lastPlayedSongId() -> String? {
+    // `libraryId` nil = most recent play across all libraries.
+    static func lastPlayedSongId(libraryId: String? = nil) -> String? {
         queue.sync {
             guard let db else { return nil }
             var stmt: OpaquePointer?
+            let clause = libraryId != nil ? "AND library_id = ?" : ""
             guard sqlite3_prepare_v2(db,
-                "SELECT song_id FROM events WHERE event='play' ORDER BY timestamp DESC LIMIT 1",
+                "SELECT song_id FROM events WHERE event='play' \(clause) ORDER BY timestamp DESC LIMIT 1",
                 -1, &stmt, nil) == SQLITE_OK else { return nil }
             defer { sqlite3_finalize(stmt) }
+            if let libraryId { sqlite3_bind_text(stmt, 1, libraryId, -1, TRANSIENT) }
             guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
             return String(cString: sqlite3_column_text(stmt, 0))
         }

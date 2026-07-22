@@ -43,9 +43,12 @@ struct Home: View {
         .onChange(of: libraryViewModel.songs) { _, songs in
             playerViewModel.updateLibrary(songs)
         }
+        .onChange(of: selectedLibraryId) { _, libraryId in
+            playerViewModel.loadInitialRecommendations(from: libraryViewModel.songs, libraryId: libraryId)
+        }
         .onAppear {
             libraryViewModel.reload()
-            playerViewModel.loadInitialRecommendations(from: libraryViewModel.songs)
+            playerViewModel.loadInitialRecommendations(from: libraryViewModel.songs, libraryId: selectedLibraryId)
         }
     }
 
@@ -69,14 +72,17 @@ struct Home: View {
                 systemImage: "exclamationmark.triangle",
                 description: Text(error)
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if libraryViewModel.songs.isEmpty {
             ContentUnavailableView(
                 "No songs",
                 systemImage: "music.note",
                 description: Text("Add MP3 files to your Music folder or choose another folder in Settings.")
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if filtered.isEmpty {
             ContentUnavailableView.search(text: searchText)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             List(filtered) { song in
                 SongRow(song: song)

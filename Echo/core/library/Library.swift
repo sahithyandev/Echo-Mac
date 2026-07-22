@@ -9,13 +9,18 @@ import Foundation
 public struct Library: Identifiable, Codable, Equatable {
     public var path: String
     public var name: String
+    /// Security-scoped bookmark for `path`, so sandboxed access survives relaunch
+    /// without re-prompting. Absent for the seeded default `~/Music` library, which
+    /// is granted via the app's read-only Music-folder entitlement instead of a picker.
+    public var bookmarkData: Data?
 
     public var id: String { path }
 
-    public init(path: String, name: String? = nil) {
+    public init(path: String, name: String? = nil, bookmarkData: Data? = nil) {
         self.path = path
         let trimmed = name?.trimmingCharacters(in: .whitespaces) ?? ""
         self.name = trimmed.isEmpty ? URL(fileURLWithPath: path).lastPathComponent : trimmed
+        self.bookmarkData = bookmarkData
     }
 
     public var url: URL { URL(fileURLWithPath: path) }

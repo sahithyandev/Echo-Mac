@@ -14,6 +14,9 @@ class MusicLibraryViewModel: ObservableObject {
 
     private var sources: [String: any LibrarySource] = [:]
     private let defaults: UserDefaults
+    // Libraries currently holding an open security-scoped resource, keyed by id,
+    // so we start access once per launch and can stop it when a library is removed.
+    private var accessingURLs: [String: URL] = [:]
 
     init(userDefaults: UserDefaults = .standard) {
         defaults = userDefaults
@@ -38,7 +41,10 @@ class MusicLibraryViewModel: ObservableObject {
 
     func addLibraries(_ urls: [URL]) {
         let existingIds = Set(libraries.map(\.id))
-        let new = urls.filter { !existingIds.contains($0.path) }.map { Library(path: $0.path) }
+        let new = urls.filter { !existingIds.contains($0.path) }.map { url -> Library in
+            let bookmark = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+            return Library(path: url.path, bookmarkData: bookmark)
+        }
         guard !new.isEmpty else { return }
         libraries += new
         persist()
@@ -47,6 +53,9 @@ class MusicLibraryViewModel: ObservableObject {
 
     func removeLibrary(_ id: String) {
         guard libraries.contains(where: { $0.id == id }) else { return }
+        if let url = accessingURLs.removeValue(forKey: id) {
+            url.stopAccessingSecurityScopedResource()
+        }
         libraries.removeAll { $0.id == id }
         sources[id] = nil
         persist()
@@ -78,6 +87,35 @@ class MusicLibraryViewModel: ObservableObject {
         return [Library(path: path)]
     }
 
+    /// Resolves a library's bookmark into a URL and, on first use this launch, starts
+    /// its security-scoped access (kept open for the app's lifetime — sandboxed reads
+    /// of songs under this directory, e.g. during playback, need it to stay started).
+    /// Libraries without bookmark data (the seeded default) fall back to the plain path.
+    private func resolvedURL(for library: Library) -> URL {
+        guard let bookmarkData = library.bookmarkData else { return library.url }
+
+        var isStale = false
+        guard let resolved = try? URL(
+            resolvingBookmarkData: bookmarkData,
+            options: .withSecurityScope,
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ) else { return library.url }
+
+        if accessingURLs[library.id] == nil, resolved.startAccessingSecurityScopedResource() {
+            accessingURLs[library.id] = resolved
+        }
+
+        if isStale,
+           let refreshed = try? resolved.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil),
+           let index = libraries.firstIndex(where: { $0.id == library.id }) {
+            libraries[index].bookmarkData = refreshed
+            persist()
+        }
+
+        return resolved
+    }
+
     // MARK: - Scanning
 
     /// Rescans every configured library and merges the results into `songs`.
@@ -90,7 +128,7 @@ class MusicLibraryViewModel: ObservableObject {
             var allSongs: [Song] = []
             var newSources: [String: any LibrarySource] = [:]
             for library in libraries {
-                let source = LocalLibrarySource(directory: library.url)
+                let source = LocalLibrarySource(directory: resolvedURL(for: library))
                 newSources[library.id] = source
                 do {
                     let scanned = try await source.listSongs()
