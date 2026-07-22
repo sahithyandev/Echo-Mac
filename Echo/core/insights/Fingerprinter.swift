@@ -133,7 +133,10 @@ public enum Fingerprinter {
         var size: Int32 = 0
         var encoded: Int32 = 0
         let ok = fp.withCString { cstr in
-            chromaprint_decode_fingerprint(cstr, Int32(fp.utf8.count), &ptr, &size, &encoded, 0)
+            // base64: 1 — chromaprint_get_fingerprint() returns a base64-encoded string,
+            // not raw bytes. With 0 here, decode always fails and isSameRecording/similarity
+            // silently return false/0 for every real fingerprint pair.
+            chromaprint_decode_fingerprint(cstr, Int32(fp.utf8.count), &ptr, &size, &encoded, 1)
         }
         guard ok == 1, let ptr, size > 0 else { return nil }
         defer { chromaprint_dealloc(ptr) }

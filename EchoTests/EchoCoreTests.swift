@@ -1,6 +1,56 @@
 import Foundation
+import MediaPlayer
 import Testing
 @testable import Echo
+
+// Generates a minimal but real, decodable PCM WAV fixture so AVFoundation-backed
+// code (AVAudioPlayer, AVAudioFile, AVURLAsset, Chromaprint) has real audio to work with.
+// Sweeps frequency (a chirp) rather than a fixed tone: Chromaprint compresses runs of
+// near-identical spectral frames, so a constant tone collapses to a degenerate,
+// near-empty fingerprint. Varying spectral content produces a real one.
+private func makeWAVFixture(
+    frequency: Double = 220,
+    amplitude: Double = 0.5,
+    duration: Double = 2.0,
+    sampleRate: Double = 44100
+) throws -> URL {
+    let endFrequency = frequency * 4
+    let frameCount = Int(sampleRate * duration)
+    var samples = [Int16](repeating: 0, count: frameCount)
+    for i in 0..<frameCount {
+        let t = Double(i) / sampleRate
+        let phase = 2 * .pi * (frequency * t + (endFrequency - frequency) / (2 * duration) * t * t)
+        let value = amplitude * sin(phase)
+        samples[i] = Int16(max(-1.0, min(1.0, value)) * Double(Int16.max))
+    }
+
+    let channels: Int16 = 1
+    let bitsPerSample: Int16 = 16
+    let byteRate = Int32(sampleRate) * Int32(channels) * Int32(bitsPerSample / 8)
+    let blockAlign = channels * (bitsPerSample / 8)
+    let dataSize = Int32(samples.count * 2)
+    let riffSize = Int32(36) + dataSize
+
+    var data = Data()
+    func appendASCII(_ s: String) { data.append(s.data(using: .ascii)!) }
+    func appendLE(_ v: Int32) { withUnsafeBytes(of: v.littleEndian) { data.append(contentsOf: $0) } }
+    func appendLE(_ v: Int16) { withUnsafeBytes(of: v.littleEndian) { data.append(contentsOf: $0) } }
+
+    appendASCII("RIFF"); appendLE(riffSize); appendASCII("WAVE")
+    appendASCII("fmt "); appendLE(Int32(16))
+    appendLE(Int16(1)) // PCM
+    appendLE(channels)
+    appendLE(Int32(sampleRate))
+    appendLE(byteRate)
+    appendLE(blockAlign)
+    appendLE(bitsPerSample)
+    appendASCII("data"); appendLE(dataSize)
+    for s in samples { appendLE(s) }
+
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("echo-fixture-\(UUID()).wav")
+    try data.write(to: url)
+    return url
+}
 
 @Suite("LocalLibrarySource")
 struct LocalLibrarySourceTests {
@@ -386,6 +436,138 @@ struct FeatureExtractorTests {
     func rmsNilForMissingFile() {
         let url = URL(fileURLWithPath: "/tmp/does-not-exist-\(UUID()).mp3")
         #expect(FeatureExtractor.computeRMS(url: url) == nil)
+    }
+
+    @Test("computeRMS returns a valid dBFS value for real audio; louder audio is less negative")
+    func rmsForRealAudio() throws {
+        let loud = try makeWAVFixture(amplitude: 0.9, duration: 1.0)
+        let quiet = try makeWAVFixture(amplitude: 0.05, duration: 1.0)
+        defer {
+            try? FileManager.default.removeItem(at: loud)
+            try? FileManager.default.removeItem(at: quiet)
+        }
+
+        let loudRMS = try #require(FeatureExtractor.computeRMS(url: loud))
+        let quietRMS = try #require(FeatureExtractor.computeRMS(url: quiet))
+        #expect(loudRMS > quietRMS)
+    }
+
+    @Test("extract populates duration and loudness from real audio")
+    func extractRealAudio() async throws {
+        let url = try makeWAVFixture(duration: 1.0)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let features = try await FeatureExtractor().extract(from: url)
+        #expect((features.durationSeconds ?? 0) > 0.5)
+        #expect(features.averageLoudness != nil)
+    }
+}
+
+@Suite("Fingerprinter")
+struct FingerprinterTests {
+    @Test("fingerprint returns a stable id and fingerprint for real audio")
+    func fingerprintRealAudio() throws {
+        let url = try makeWAVFixture(duration: 3.0)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let result = try #require(Fingerprinter.fingerprint(url: url))
+        #expect(result.stableId.count == 32)
+        #expect(!result.fingerprint.isEmpty)
+    }
+
+    @Test("fingerprint returns nil for an undecodable file")
+    func fingerprintNilForGarbage() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("garbage-\(UUID()).wav")
+        try Data([0x00, 0x01, 0x02, 0x03]).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(Fingerprinter.fingerprint(url: url) == nil)
+    }
+
+    @Test("isSameRecording and similarity: a fingerprint always matches itself")
+    func selfComparisonMatches() throws {
+        let url = try makeWAVFixture(duration: 3.0)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let fp = try #require(Fingerprinter.fingerprint(url: url))
+        #expect(Fingerprinter.isSameRecording(fp.fingerprint, fp.fingerprint))
+        #expect(Fingerprinter.similarity(fp.fingerprint, fp.fingerprint) == 1.0)
+    }
+
+    @Test("isSameRecording and similarity return false/0 for undecodable fingerprint strings")
+    func invalidFingerprintStrings() {
+        #expect(Fingerprinter.isSameRecording("not-a-fingerprint", "also-not") == false)
+        #expect(Fingerprinter.similarity("not-a-fingerprint", "also-not") == 0)
+    }
+}
+
+@Suite("AudioPlayer")
+struct AudioPlayerTests {
+    @Test("play starts playback, pause/resume toggle isPlaying, seek moves currentTime")
+    func playPauseResumeSeek() throws {
+        let url = try makeWAVFixture(duration: 2.0)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let player = AudioPlayer()
+        try player.play(Song(url: url))
+        #expect(player.isPlaying == true)
+        #expect(player.duration > 1.0)
+
+        player.pause()
+        #expect(player.isPlaying == false)
+
+        player.resume()
+        #expect(player.isPlaying == true)
+
+        player.seek(to: 1.0)
+        #expect(abs(player.currentTime - 1.0) < 0.2)
+    }
+
+    @Test("play throws for an undecodable file")
+    func playThrowsForGarbage() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("garbage-\(UUID()).wav")
+        try Data([0x00, 0x01, 0x02, 0x03]).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let player = AudioPlayer()
+        #expect(throws: (any Error).self) {
+            try player.play(Song(url: url))
+        }
+    }
+}
+
+// .serialized: both tests read/write the shared MPNowPlayingInfoCenter.default() singleton.
+@Suite("NowPlayingService", .serialized)
+struct NowPlayingServiceTests {
+    @Test("clear resets Now Playing info and playback state")
+    func clearResets() {
+        let service = NowPlayingService()
+        service.clear()
+        #expect(MPNowPlayingInfoCenter.default().nowPlayingInfo == nil)
+        #expect(MPNowPlayingInfoCenter.default().playbackState == .stopped)
+    }
+
+    @Test("update populates Now Playing info with title, duration, and playback rate")
+    func updatePopulatesInfo() async throws {
+        let url = try makeWAVFixture(duration: 1.0)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let service = NowPlayingService()
+        let song = Song(url: url)
+        service.update(song: song, currentTime: 2, duration: 10, isPlaying: true)
+
+        // update() dispatches artwork loading on a background Task; poll briefly for it to land.
+        var info: [String: Any]?
+        for _ in 0..<20 {
+            info = MPNowPlayingInfoCenter.default().nowPlayingInfo
+            if info?[MPMediaItemPropertyTitle] != nil { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        #expect(info?[MPMediaItemPropertyTitle] as? String == song.title)
+        #expect(info?[MPMediaItemPropertyPlaybackDuration] as? TimeInterval == 10)
+        #expect(info?[MPNowPlayingInfoPropertyPlaybackRate] as? Double == 1.0)
+
+        service.clear()
     }
 }
 
