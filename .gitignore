@@ -4,6 +4,7 @@ xcuserdata/
 .DS_Store
 *.xcuserstate
 DerivedData/
+build/
 EchoCore/vendor/chromaprint-*.tar.gz
 EchoCore/vendor/chromaprint-*/
 EchoCore/vendor/build-*/
