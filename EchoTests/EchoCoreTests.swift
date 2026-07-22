@@ -126,7 +126,7 @@ struct MusicLibraryViewModelTests {
 
 // .serialized: every test here mutates the shared PlaybackStore.dbPathOverride/cachedDB
 // static state, so running them concurrently races on which temp DB is "current."
-@Suite("PlaybackStore — per-library scoping", .serialized)
+@Suite("PlaybackStore", .serialized)
 struct PlaybackStoreLibraryScopingTests {
     @Test("listeningTotals and topByArtist scope by library, nil combines all")
     func scoping() async throws {
@@ -194,6 +194,143 @@ struct PlaybackStoreLibraryScopingTests {
         #expect(PlaybackStore.listeningTotals(libraryId: libB.id).allTime == 200)
         // Unattributable row still counts in the combined view.
         #expect(PlaybackStore.listeningTotals().allTime == 350)
+    }
+
+    private func freshDB() -> String {
+        let tempPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("echo-playback-test-\(UUID()).db").path
+        PlaybackStore.dbPathOverride = tempPath
+        return tempPath
+    }
+
+    @Test("track records events and songStats aggregates plays/skips/completions")
+    func trackAndSongStats() async throws {
+        let tempPath = freshDB()
+        defer { try? FileManager.default.removeItem(atPath: tempPath) }
+
+        PlaybackStore.upsertSong(id: "song-x", title: "Song X")
+        PlaybackStore.track(event: "play", songId: "song-x", progress: 0.0)
+        PlaybackStore.track(event: "skip", songId: "song-x", progress: 0.4)
+        PlaybackStore.track(event: "play", songId: "song-x", progress: 0.0)
+        PlaybackStore.track(event: "complete", songId: "song-x", progress: 1.0)
+
+        let stat = try #require(PlaybackStore.songStats().first { $0.id == "song-x" })
+        #expect(stat.title == "Song X")
+        #expect(stat.plays == 2)
+        #expect(stat.skips == 1)
+        #expect(stat.completions == 1)
+    }
+
+    @Test("reconcile repoints filename-keyed rows to the resolved stableId")
+    func reconcileMovesRows() async throws {
+        let tempPath = freshDB()
+        defer { try? FileManager.default.removeItem(atPath: tempPath) }
+
+        PlaybackStore.upsertSong(id: "track.mp3", title: "Track")
+        PlaybackStore.addPath("/tmp/track.mp3", songId: "track.mp3")
+        PlaybackStore.track(event: "play", songId: "track.mp3", progress: 0)
+        PlaybackStore.logListening(songId: "track.mp3", seconds: 42)
+
+        PlaybackStore.reconcile(filename: "track.mp3", to: "stable-id-1")
+
+        let stats = PlaybackStore.songStats()
+        #expect(stats.contains { $0.id == "stable-id-1" && $0.plays == 1 })
+        #expect(!stats.contains { $0.id == "track.mp3" })
+        #expect(PlaybackStore.listeningTotals().allTime == 42)
+    }
+
+    @Test("reconcile is a no-op when filename already equals the target id")
+    func reconcileNoOpWhenEqual() async throws {
+        let tempPath = freshDB()
+        defer { try? FileManager.default.removeItem(atPath: tempPath) }
+
+        PlaybackStore.upsertSong(id: "same-id", title: "Same")
+        PlaybackStore.track(event: "play", songId: "same-id", progress: 0)
+        PlaybackStore.reconcile(filename: "same-id", to: "same-id")
+
+        #expect(PlaybackStore.songStats().first { $0.id == "same-id" }?.plays == 1)
+    }
+
+    @Test("listeningByDay sums seconds per day and scopes by library")
+    func listeningByDay() async throws {
+        let tempPath = freshDB()
+        defer { try? FileManager.default.removeItem(atPath: tempPath) }
+
+        let todayFormatter = DateFormatter()
+        todayFormatter.dateFormat = "yyyy-MM-dd"
+        let today = todayFormatter.string(from: Date())
+
+        PlaybackStore.logListening(songId: "s1", seconds: 100, libraryId: "libA")
+        PlaybackStore.logListening(songId: "s2", seconds: 50, libraryId: "libB")
+
+        let rowsAll = PlaybackStore.listeningByDay()
+        #expect(rowsAll.first?.day == today)
+        #expect(rowsAll.first?.seconds == 150)
+
+        let rowsA = PlaybackStore.listeningByDay(libraryId: "libA")
+        #expect(rowsA.first?.seconds == 100)
+    }
+
+    @Test("listeningDaysBySong zero-fills a per-song day series, most recent last")
+    func listeningDaysBySong() async throws {
+        let tempPath = freshDB()
+        defer { try? FileManager.default.removeItem(atPath: tempPath) }
+
+        PlaybackStore.logListening(songId: "s1", seconds: 30)
+
+        let series = PlaybackStore.listeningDaysBySong(days: 3)
+        let arr = try #require(series["s1"])
+        #expect(arr.count == 3)
+        #expect(arr.last == 30)
+        #expect(arr.dropLast().allSatisfy { $0 == 0 })
+    }
+
+    @Test("likeabilityScores computes engagement-vs-skip ratio")
+    func likeabilityScores() async throws {
+        let tempPath = freshDB()
+        defer { try? FileManager.default.removeItem(atPath: tempPath) }
+
+        PlaybackStore.track(event: "complete", songId: "liked", progress: 1.0)
+        PlaybackStore.track(event: "skip", songId: "disliked", progress: 0.1)
+        PlaybackStore.track(event: "milestone_50", songId: "mixed", progress: 0.5)
+        PlaybackStore.track(event: "skip", songId: "mixed", progress: 0.5)
+
+        let scores = PlaybackStore.likeabilityScores()
+        #expect(scores["liked"] == 1.0)
+        #expect(scores["disliked"] == 0.0)
+        #expect(abs((scores["mixed"] ?? -1) - (0.5 / 1.5)) < 0.0001)
+    }
+
+    @Test("recentlyPlayedSongIds only considers play events")
+    func recentlyPlayedSongIds() async throws {
+        let tempPath = freshDB()
+        defer { try? FileManager.default.removeItem(atPath: tempPath) }
+
+        PlaybackStore.track(event: "play", songId: "played", progress: 0)
+        PlaybackStore.track(event: "skip", songId: "skipped-only", progress: 0.1)
+
+        let ids = PlaybackStore.recentlyPlayedSongIds()
+        #expect(ids.contains("played"))
+        #expect(!ids.contains("skipped-only"))
+    }
+
+    @Test("topByAlbum/topByYear/topByGenre respect the 1-hour floor and scope by library")
+    func topByAttribute() async throws {
+        let tempPath = freshDB()
+        defer { try? FileManager.default.removeItem(atPath: tempPath) }
+
+        let libA = "lib-a"
+        PlaybackStore.upsertSong(id: "song-1", title: "One", album: "Album A", year: 2020, genre: "Rock")
+        PlaybackStore.upsertSong(id: "song-2", title: "Two", album: "Album B", year: 2021, genre: "Jazz")
+        PlaybackStore.logListening(songId: "song-1", seconds: 4000, libraryId: libA)
+        PlaybackStore.logListening(songId: "song-2", seconds: 1000) // below 3600s floor, excluded everywhere
+
+        #expect(PlaybackStore.topByAlbum().map(\.name) == ["Album A"])
+        #expect(PlaybackStore.topByYear().map(\.name) == ["2020"])
+        #expect(PlaybackStore.topByGenre().map(\.name) == ["Rock"])
+
+        #expect(PlaybackStore.topByAlbum(libraryId: libA).map(\.name) == ["Album A"])
+        #expect(PlaybackStore.topByAlbum(libraryId: "other-lib").isEmpty)
     }
 }
 

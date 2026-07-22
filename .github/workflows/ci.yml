@@ -14,7 +14,8 @@ jobs:
         with:
           xcode-version: latest-stable
       - run: xcodebuild -project Echo.xcodeproj -scheme Echo -configuration Debug build
-      - run: xcodebuild -project Echo.xcodeproj -scheme Echo -configuration Debug test
+      - run: xcodebuild -project Echo.xcodeproj -scheme Echo -configuration Debug -resultBundlePath build/Echo.xcresult test
+      - run: xcrun xccov view --report --only-targets build/Echo.xcresult
 
   tag:
     needs: build-and-test
