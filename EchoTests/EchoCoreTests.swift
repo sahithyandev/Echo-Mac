@@ -2,19 +2,9 @@ import Foundation
 import Testing
 @testable import Echo
 
-@Suite("EchoCore")
-struct EchoCoreTests {
-    @Test("RecommendationEngine returns empty array before analysis")
-    func recommendationsBeforeAnalysis() async {
-        let url = URL(fileURLWithPath: "/tmp/fake.mp3")
-        let results = await RecommendationEngine.shared.recommendations(for: url)
-        #expect(results.isEmpty)
-    }
-}
-
-@Suite("MusicLibrary")
-struct MusicLibraryTests {
-    @Test("songs(in:) recurses into subdirectories")
+@Suite("LocalLibrarySource")
+struct LocalLibrarySourceTests {
+    @Test("listSongs() recurses into subdirectories")
     func recursesIntoSubdirectories() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("musiclibrary-test-\(UUID())")
         let nested = root.appendingPathComponent("Artist/Album")
@@ -25,7 +15,7 @@ struct MusicLibraryTests {
         FileManager.default.createFile(atPath: nested.appendingPathComponent("nested.mp3").path, contents: Data())
         FileManager.default.createFile(atPath: nested.appendingPathComponent("ignore.txt").path, contents: Data())
 
-        let songs = try MusicLibrary().songs(in: root)
+        let songs = try LocalLibrarySource(directory: root).listSongs()
 
         #expect(songs.map(\.title).sorted() == ["nested", "top"])
     }

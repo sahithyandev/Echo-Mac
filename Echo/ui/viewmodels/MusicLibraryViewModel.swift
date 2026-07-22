@@ -1,6 +1,5 @@
 import Foundation
 import AppKit
-import AVFoundation
 import Combine
 
 @MainActor
@@ -8,7 +7,7 @@ class MusicLibraryViewModel: ObservableObject {
     @Published var songs: [Song] = []
     @Published var errorMessage: String?
 
-    private let library = MusicLibrary()
+    private var source: (any LibrarySource)?
 
     func songs(inAlbum name: String) -> [Song] {
         songs.filter { ($0.album ?? "Unknown Album") == name }
@@ -25,46 +24,25 @@ class MusicLibraryViewModel: ObservableObject {
     }
 
     func load(from directoryURL: URL) {
-        do {
-            songs = try library.songs(in: directoryURL)
-            Task { await loadMetadata() }
-        } catch {
-            errorMessage = error.localizedDescription
+        let source = LocalLibrarySource(directory: directoryURL)
+        self.source = source
+        Task {
+            do {
+                songs = try await source.listSongs()
+                await loadMetadata()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
     private func loadMetadata() async {
-        // ponytail: mutate a local copy so songs is published once, not once per song
-        var updated = songs
-        for i in updated.indices {
-            let url = updated[i].url
-            let asset = AVURLAsset(url: url)
-            guard let items = try? await asset.load(.commonMetadata) else { continue }
-
-            var title: String?
-            var artist: String?
-            var album: String?
-
-            for item in items {
-                switch item.commonKey {
-                case .commonKeyTitle:
-                    title = try? await item.load(.stringValue)
-                case .commonKeyArtist:
-                    artist = try? await item.load(.stringValue)
-                case .commonKeyAlbumName:
-                    album = try? await item.load(.stringValue)
-                case .commonKeyArtwork:
-                    if let data = try? await item.load(.dataValue), let image = ArtworkCache.decode(data) {
-                        ArtworkCache.shared.set(image, for: url)
-                    }
-                default:
-                    break
-                }
+        guard let source else { return }
+        let (updated, artwork) = await source.loadMetadata(for: songs)
+        for (url, data) in artwork {
+            if let image = ArtworkCache.decode(data) {
+                ArtworkCache.shared.set(image, for: url)
             }
-
-            if let title { updated[i].title = title }
-            updated[i].artist = artist
-            updated[i].album = album
         }
         songs = updated
     }
