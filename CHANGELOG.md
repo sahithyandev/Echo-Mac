@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0
+
+**Features**
+- Support for multiple local music libraries
+  By default, `~/Music` is added. Users can add/remove other local directories as libraries.
+
+**Fixes**
+- Chromaprint duplicate detection: fingerprints are now decoded correctly (previously failed silently on every real fingerprint pair)
+
+**Internal**
+- Introduced `LibrarySource` protocol, reorganized `core/` by domain
+- Expanded test coverage; CI now reports code coverage
+- Added a Makefile for common dev tasks
+
 ## 0.2.0
 
 **Features**
