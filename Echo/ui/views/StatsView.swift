@@ -2,8 +2,9 @@ import SwiftUI
 import Charts
 
 struct StatsView: View {
+    @EnvironmentObject private var libraryViewModel: MusicLibraryViewModel
+    @State private var selectedLibraryId: String?
     @State private var totals: (today: Double, week: Double, allTime: Double) = (0, 0, 0)
-    @State private var counts: (songs: Int, artists: Int, albums: Int) = (0, 0, 0)
     @State private var byDay: [DayPoint] = []
     @State private var topArtists: [(name: String, seconds: Double)] = []
     @State private var topAlbums:  [(name: String, seconds: Double)] = []
@@ -16,9 +17,24 @@ struct StatsView: View {
         let hours: Double
     }
 
+    // Songs/artists/albums counts come from the live library scan (not PlaybackStore,
+    // which is keyed by content identity, not by library) so they can be scoped per library.
+    private var scopedSongs: [Song] {
+        guard let selectedLibraryId else { return libraryViewModel.songs }
+        return libraryViewModel.songs.filter { $0.libraryId == selectedLibraryId }
+    }
+
+    private var counts: (songs: Int, artists: Int, albums: Int) {
+        let songs = scopedSongs
+        let artists = Set(songs.flatMap { libraryViewModel.artistNames(for: $0) })
+        let albums = Set(songs.compactMap(\.album).filter { !$0.isEmpty })
+        return (songs.count, artists.count, albums.count)
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.xl) {
+                if libraryViewModel.libraries.count > 1 { libraryPicker }
                 heroSection
                 if !byDay.isEmpty      { dailyChart }
                 if !topArtists.isEmpty { rankedList(title: "Artists", rows: topArtists) }
@@ -27,32 +43,45 @@ struct StatsView: View {
                 if !topGenres.isEmpty  { rankedList(title: "Genres",  rows: topGenres) }
                 if counts.songs > 0   { libraryFooter }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(AppSpacing.lg)
         }
         .navigationTitle("Stats")
-        .task {
-            // All of these are queue.sync SQLite aggregations — run them off the
-            // MainActor so opening Stats doesn't freeze the UI, then publish once.
-            let stats = await Task.detached(priority: .userInitiated) {
-                (counts: PlaybackStore.libraryCounts(),
-                 totals: PlaybackStore.listeningTotals(),
-                 byDay: PlaybackStore.listeningByDay(),
-                 artists: PlaybackStore.topByArtist(),
-                 albums: PlaybackStore.topByAlbum(),
-                 years: PlaybackStore.topByYear(),
-                 genres: PlaybackStore.topByGenre())
-            }.value
-            counts     = stats.counts
-            totals     = stats.totals
-            byDay      = makeDayPoints(stats.byDay.reversed())
-            topArtists = stats.artists
-            topAlbums  = stats.albums
-            topYears   = stats.years
-            topGenres  = stats.genres
-        }
+        .task(id: selectedLibraryId) { await loadStats() }
     }
 
-    // MARK: - Library footer
+    private func loadStats() async {
+        // All of these are queue.sync SQLite aggregations — run them off the
+        // MainActor so opening Stats doesn't freeze the UI, then publish once.
+        let libraryId = selectedLibraryId
+        let stats = await Task.detached(priority: .userInitiated) {
+            (totals: PlaybackStore.listeningTotals(libraryId: libraryId),
+             byDay: PlaybackStore.listeningByDay(libraryId: libraryId),
+             artists: PlaybackStore.topByArtist(libraryId: libraryId),
+             albums: PlaybackStore.topByAlbum(libraryId: libraryId),
+             years: PlaybackStore.topByYear(libraryId: libraryId),
+             genres: PlaybackStore.topByGenre(libraryId: libraryId))
+        }.value
+        totals     = stats.totals
+        byDay      = makeDayPoints(stats.byDay.reversed())
+        topArtists = stats.artists
+        topAlbums  = stats.albums
+        topYears   = stats.years
+        topGenres  = stats.genres
+    }
+
+    // MARK: - Library picker & footer
+
+    private var libraryPicker: some View {
+        Picker("Library", selection: $selectedLibraryId) {
+            Text("All Libraries").tag(String?.none)
+            ForEach(libraryViewModel.libraries) { library in
+                Text(library.name).tag(String?.some(library.id))
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+    }
 
     private var libraryFooter: some View {
         HStack(spacing: AppSpacing.xl) {

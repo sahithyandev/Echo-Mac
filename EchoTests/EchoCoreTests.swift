@@ -21,6 +21,182 @@ struct LocalLibrarySourceTests {
     }
 }
 
+@Suite("MusicLibraryViewModel — multi-library")
+@MainActor
+struct MusicLibraryViewModelTests {
+    private func tempDefaults() -> UserDefaults {
+        let suite = "echo-test-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        return defaults
+    }
+
+    @Test("seeds ~/Music when nothing is persisted")
+    func seedsDefault() {
+        let vm = MusicLibraryViewModel(userDefaults: tempDefaults())
+        #expect(vm.libraries.count == 1)
+        #expect(vm.libraries.first?.path == "/Users/\(NSUserName())/Music")
+    }
+
+    @Test("migrates the legacy single-directory key")
+    func migratesLegacyKey() {
+        let defaults = tempDefaults()
+        defaults.set("/tmp/legacy-library", forKey: "libraryDirectory")
+        let vm = MusicLibraryViewModel(userDefaults: defaults)
+        #expect(vm.libraries.map(\.path) == ["/tmp/legacy-library"])
+    }
+
+    @Test("add persists, dedups by path, and is picked up on relaunch")
+    func addPersistsAndDedups() {
+        let defaults = tempDefaults()
+        let vm = MusicLibraryViewModel(userDefaults: defaults)
+        let initialCount = vm.libraries.count
+
+        vm.addLibraries([URL(fileURLWithPath: "/tmp/lib-a"), URL(fileURLWithPath: "/tmp/lib-b")])
+        #expect(vm.libraries.count == initialCount + 2)
+
+        // Re-adding the same path is a no-op.
+        vm.addLibraries([URL(fileURLWithPath: "/tmp/lib-a")])
+        #expect(vm.libraries.count == initialCount + 2)
+
+        // Simulates a relaunch: fresh view model, same UserDefaults.
+        let reloaded = MusicLibraryViewModel(userDefaults: defaults)
+        #expect(Set(reloaded.libraries.map(\.path)) == Set(vm.libraries.map(\.path)))
+    }
+
+    @Test("id is the folder path, and survives remove/re-add unchanged")
+    func idIsStablePath() {
+        let defaults = tempDefaults()
+        let vm = MusicLibraryViewModel(userDefaults: defaults)
+        vm.addLibraries([URL(fileURLWithPath: "/tmp/lib-a")])
+        let library = vm.libraries.first { $0.path == "/tmp/lib-a" }
+        #expect(library?.id == "/tmp/lib-a")
+
+        vm.removeLibrary("/tmp/lib-a")
+        vm.addLibraries([URL(fileURLWithPath: "/tmp/lib-a")])
+        #expect(vm.libraries.first { $0.path == "/tmp/lib-a" }?.id == "/tmp/lib-a")
+    }
+
+    @Test("rename updates the display name, persists, and doesn't change id")
+    func renamePersists() {
+        let defaults = tempDefaults()
+        let vm = MusicLibraryViewModel(userDefaults: defaults)
+        vm.addLibraries([URL(fileURLWithPath: "/tmp/lib-a")])
+        let id = vm.libraries.first { $0.path == "/tmp/lib-a" }!.id
+
+        vm.renameLibrary(id, to: "My Beats")
+        #expect(vm.libraries.first { $0.id == id }?.name == "My Beats")
+
+        // Blank names are rejected — the existing name is kept.
+        vm.renameLibrary(id, to: "   ")
+        #expect(vm.libraries.first { $0.id == id }?.name == "My Beats")
+
+        let reloaded = MusicLibraryViewModel(userDefaults: defaults)
+        #expect(reloaded.libraries.first { $0.id == id }?.name == "My Beats")
+    }
+
+    @Test("remove persists and can empty the list entirely")
+    func removeCanEmptyList() {
+        let defaults = tempDefaults()
+        let vm = MusicLibraryViewModel(userDefaults: defaults)
+        for library in vm.libraries { vm.removeLibrary(library.id) }
+        #expect(vm.libraries.isEmpty)
+
+        let reloaded = MusicLibraryViewModel(userDefaults: defaults)
+        #expect(reloaded.libraries.isEmpty)
+    }
+
+    @Test("dedupByURL keeps first occurrence and sorts by filename")
+    func dedupByURL() {
+        let libA = "lib-a", libB = "lib-b"
+        var shared = Song(url: URL(fileURLWithPath: "/tmp/shared.mp3"))
+        shared.libraryId = libA
+        var sharedAgain = Song(url: URL(fileURLWithPath: "/tmp/shared.mp3"))
+        sharedAgain.libraryId = libB
+        var zTrack = Song(url: URL(fileURLWithPath: "/tmp/zzz.mp3"))
+        zTrack.libraryId = libB
+
+        let merged = MusicLibraryViewModel.dedupByURL([zTrack, shared, sharedAgain])
+
+        #expect(merged.count == 2)
+        #expect(merged.map(\.title) == ["shared", "zzz"])
+        #expect(merged.first?.libraryId == libA) // first occurrence wins
+    }
+}
+
+// .serialized: every test here mutates the shared PlaybackStore.dbPathOverride/cachedDB
+// static state, so running them concurrently races on which temp DB is "current."
+@Suite("PlaybackStore — per-library scoping", .serialized)
+struct PlaybackStoreLibraryScopingTests {
+    @Test("listeningTotals and topByArtist scope by library, nil combines all")
+    func scoping() async throws {
+        let tempPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("echo-playback-test-\(UUID()).db").path
+        PlaybackStore.dbPathOverride = tempPath
+        defer { try? FileManager.default.removeItem(atPath: tempPath) }
+
+        let libA = "library-a"
+        let libB = "library-b"
+
+        PlaybackStore.upsertSong(id: "song-a", title: "Song A", artist: "Artist A")
+        PlaybackStore.upsertSong(id: "song-b", title: "Song B", artist: "Artist B")
+
+        PlaybackStore.logListening(songId: "song-a", seconds: 4000, libraryId: libA)
+        PlaybackStore.logListening(songId: "song-b", seconds: 5000, libraryId: libB)
+        PlaybackStore.logListening(songId: "song-a", seconds: 1000) // legacy row, no library — combined-only
+
+        // Writes are enqueued via queue.async on PlaybackStore's serial queue; reads use
+        // queue.sync on the same queue, so by the time we call a read below, everything
+        // scheduled above has already run (FIFO on a serial queue).
+
+        let totalsA = PlaybackStore.listeningTotals(libraryId: libA)
+        let totalsB = PlaybackStore.listeningTotals(libraryId: libB)
+        let totalsCombined = PlaybackStore.listeningTotals()
+
+        #expect(totalsA.allTime == 4000)
+        #expect(totalsB.allTime == 5000)
+        #expect(totalsCombined.allTime == 10000) // 4000 + 5000 + 1000 legacy row
+
+        let artistsA = PlaybackStore.topByArtist(libraryId: libA)
+        #expect(artistsA.map(\.name) == ["Artist A"])
+
+        let artistsCombined = PlaybackStore.topByArtist()
+        #expect(Set(artistsCombined.map(\.name)) == ["Artist A", "Artist B"])
+    }
+
+    @Test("backfillLibraryIds attributes pre-upgrade listening history by matching file path to library folder")
+    func backfillLibraryIds() async throws {
+        let tempPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("echo-playback-test-\(UUID()).db").path
+        PlaybackStore.dbPathOverride = tempPath
+        defer { try? FileManager.default.removeItem(atPath: tempPath) }
+
+        let libA = Library(path: "/tmp/musicA")
+        let libB = Library(path: "/tmp/musicB")
+
+        PlaybackStore.upsertSong(id: "song-a", title: "Song A")
+        PlaybackStore.upsertSong(id: "song-b", title: "Song B")
+        PlaybackStore.upsertSong(id: "song-c", title: "Song C")
+
+        PlaybackStore.addPath("/tmp/musicA/track1.mp3", songId: "song-a")
+        PlaybackStore.addPath("/tmp/musicB/track2.mp3", songId: "song-b")
+        PlaybackStore.addPath("legacy-filename.mp3", songId: "song-c") // bare filename — unattributable
+
+        // Recorded before library_id existed, so these land as NULL — exactly what a
+        // pre-upgrade user's history looks like.
+        PlaybackStore.logListening(songId: "song-a", seconds: 100)
+        PlaybackStore.logListening(songId: "song-b", seconds: 200)
+        PlaybackStore.logListening(songId: "song-c", seconds: 50)
+
+        PlaybackStore.backfillLibraryIds(libraries: [libA, libB])
+
+        #expect(PlaybackStore.listeningTotals(libraryId: libA.id).allTime == 100)
+        #expect(PlaybackStore.listeningTotals(libraryId: libB.id).allTime == 200)
+        // Unattributable row still counts in the combined view.
+        #expect(PlaybackStore.listeningTotals().allTime == 350)
+    }
+}
+
 @Suite("FeatureExtractor")
 struct FeatureExtractorTests {
     @Test("parseKey handles major keys")

@@ -19,6 +19,8 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     // song_id for the currently-playing song (filename until fingerprint resolves, then stableId).
     private var nowPlayingSongId: String?
+    // The library the currently-playing song came from — tags playback events for per-library stats.
+    private var nowPlayingLibraryId: String?
 
     private let featureStore: FeatureStore = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -57,7 +59,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             self.flushListening()
             if let song = self.nowPlaying {
                 let sid = await self.featureStore.features(for: song.url)?.stableId
-                PlaybackStore.track(event: "complete", songId: sid ?? song.url.lastPathComponent, progress: 1.0)
+                PlaybackStore.track(event: "complete", songId: sid ?? song.url.lastPathComponent, progress: 1.0, libraryId: self.nowPlayingLibraryId)
             }
             self.playNext()
         }
@@ -74,7 +76,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func play(_ song: Song, in queue: [Song] = []) {
         flushListening()
         if let current = nowPlaying, !lastSongCompleted {
-            PlaybackStore.track(event: "skip", songId: nowPlayingSongId ?? current.url.lastPathComponent, progress: progress)
+            PlaybackStore.track(event: "skip", songId: nowPlayingSongId ?? current.url.lastPathComponent, progress: progress, libraryId: nowPlayingLibraryId)
         }
         lastSongCompleted = false
 
@@ -82,6 +84,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         // The async Task below promotes it to the stableId once the fingerprint resolves.
         let initialId = song.url.lastPathComponent
         nowPlayingSongId = initialId
+        nowPlayingLibraryId = song.libraryId
 
         if !queue.isEmpty {
             self.originalQueue = queue
@@ -102,7 +105,7 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         } catch {
             print("Error playing \(song.title): \(error)")
         }
-        PlaybackStore.track(event: "play", songId: initialId, progress: 0.0)
+        PlaybackStore.track(event: "play", songId: initialId, progress: 0.0, libraryId: nowPlayingLibraryId)
         Task {
             // Resolve stableId asynchronously, then promote song_id and reconcile early rows.
             let features = await featureStore.features(for: song.url)
@@ -212,13 +215,13 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             isPlaying = false
             flushListening()
             if let song = nowPlaying {
-                PlaybackStore.track(event: "pause", songId: nowPlayingSongId ?? song.url.lastPathComponent, progress: progress)
+                PlaybackStore.track(event: "pause", songId: nowPlayingSongId ?? song.url.lastPathComponent, progress: progress, libraryId: nowPlayingLibraryId)
             }
         } else {
             player.resume()
             isPlaying = true
             if let song = nowPlaying {
-                PlaybackStore.track(event: "resume", songId: nowPlayingSongId ?? song.url.lastPathComponent, progress: progress)
+                PlaybackStore.track(event: "resume", songId: nowPlayingSongId ?? song.url.lastPathComponent, progress: progress, libraryId: nowPlayingLibraryId)
             }
         }
         updateSystemNowPlaying()
@@ -279,13 +282,13 @@ class AudioPlayerViewModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let pct = Int(progress * 100)
         for milestone in [25, 50, 75] where pct >= milestone && !trackedMilestones.contains(milestone) {
             trackedMilestones.insert(milestone)
-            PlaybackStore.track(event: "milestone_\(milestone)", songId: nowPlayingSongId ?? song.url.lastPathComponent, progress: progress)
+            PlaybackStore.track(event: "milestone_\(milestone)", songId: nowPlayingSongId ?? song.url.lastPathComponent, progress: progress, libraryId: nowPlayingLibraryId)
         }
     }
 
     private func flushListening() {
         guard listenAccrued > 0, let song = nowPlaying else { return }
-        PlaybackStore.logListening(songId: nowPlayingSongId ?? song.url.lastPathComponent, seconds: listenAccrued)
+        PlaybackStore.logListening(songId: nowPlayingSongId ?? song.url.lastPathComponent, seconds: listenAccrued, libraryId: nowPlayingLibraryId)
         listenAccrued = 0
     }
 

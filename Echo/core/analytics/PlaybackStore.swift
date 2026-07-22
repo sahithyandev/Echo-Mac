@@ -24,12 +24,37 @@ enum PlaybackStore {
         return f
     }()
 
-    private static let db: OpaquePointer? = {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let dir = support.appendingPathComponent("Echo")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    // Test seam: set before reading test results to point PlaybackStore at an isolated
+    // temp DB. Tests run hosted inside Echo.app (TEST_HOST), so the app's own launch
+    // sequence can touch the real on-disk DB first — the didSet forces a reopen at the
+    // new path rather than relying on being first, which a plain lazy static can't do.
+    static var dbPathOverride: String? {
+        didSet {
+            guard dbPathOverride != oldValue else { return }
+            queue.sync {
+                if let existing = cachedDB { sqlite3_close(existing) }
+                cachedDB = openDB(override: dbPathOverride)
+            }
+        }
+    }
+
+    private static var cachedDB: OpaquePointer? = openDB(override: dbPathOverride)
+    private static var db: OpaquePointer? { cachedDB }
+
+    private static func openDB(override: String?) -> OpaquePointer? {
+        let path: String
+        var oldAnalyticsPath: String?
+        if let override {
+            path = override
+        } else {
+            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            let dir = support.appendingPathComponent("Echo")
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            path = dir.appendingPathComponent("playback.db").path
+            oldAnalyticsPath = dir.appendingPathComponent("analytics.db").path
+        }
         var handle: OpaquePointer?
-        guard sqlite3_open(dir.appendingPathComponent("playback.db").path, &handle) == SQLITE_OK,
+        guard sqlite3_open(path, &handle) == SQLITE_OK,
               let db = handle else { return nil }
 
         for sql in [
@@ -93,8 +118,7 @@ enum PlaybackStore {
         sqlite3_finalize(vStmt)
 
         if userVersion == 0 {
-            let oldPath = dir.appendingPathComponent("analytics.db").path
-            if FileManager.default.fileExists(atPath: oldPath) {
+            if let oldPath = oldAnalyticsPath, FileManager.default.fileExists(atPath: oldPath) {
                 // ATTACH can't be inside a transaction, so attach first, then wrap copies in BEGIN/COMMIT
                 let escaped = oldPath.replacingOccurrences(of: "'", with: "''")
                 var ok = sqlite3_exec(db, "ATTACH '\(escaped)' AS old", nil, nil, nil) == SQLITE_OK
@@ -141,30 +165,46 @@ enum PlaybackStore {
             }
         }
 
+        // v2: library_id on events/listening, for per-library stats scoping. Nullable —
+        // pre-existing rows stay unscoped and only surface in the combined ("All") view.
+        var schemaVersion: Int32 = 0
+        var svStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "PRAGMA user_version", -1, &svStmt, nil) == SQLITE_OK,
+           sqlite3_step(svStmt) == SQLITE_ROW {
+            schemaVersion = sqlite3_column_int(svStmt, 0)
+        }
+        sqlite3_finalize(svStmt)
+        if schemaVersion == 1 {
+            sqlite3_exec(db, "ALTER TABLE events ADD COLUMN library_id TEXT", nil, nil, nil)
+            sqlite3_exec(db, "ALTER TABLE listening ADD COLUMN library_id TEXT", nil, nil, nil)
+            sqlite3_exec(db, "PRAGMA user_version = 2", nil, nil, nil)
+        }
+
         return db
-    }()
+    }
 
     // MARK: - Writes
 
-    static func track(event: String, songId: String, progress: Double) {
+    static func track(event: String, songId: String, progress: Double, libraryId: String? = nil) {
         let p = round(progress * 1000) / 1000
         let ts = Date().timeIntervalSince1970
         queue.async {
             guard let db else { return }
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db,
-                "INSERT INTO events(song_id,event,progress,timestamp) VALUES(?,?,?,?)",
+                "INSERT INTO events(song_id,event,progress,timestamp,library_id) VALUES(?,?,?,?,?)",
                 -1, &stmt, nil) == SQLITE_OK else { return }
             sqlite3_bind_text(stmt, 1, songId, -1, TRANSIENT)
             sqlite3_bind_text(stmt, 2, event,  -1, TRANSIENT)
             sqlite3_bind_double(stmt, 3, p)
             sqlite3_bind_double(stmt, 4, ts)
+            if let libraryId { sqlite3_bind_text(stmt, 5, libraryId, -1, TRANSIENT) } else { sqlite3_bind_null(stmt, 5) }
             sqlite3_step(stmt)
             sqlite3_finalize(stmt)
         }
     }
 
-    static func logListening(songId: String, seconds: Double) {
+    static func logListening(songId: String, seconds: Double, libraryId: String? = nil) {
         guard seconds > 0 else { return }
         let day = dayFormatter.string(from: Date())
         let ts = Date().timeIntervalSince1970
@@ -172,12 +212,13 @@ enum PlaybackStore {
             guard let db else { return }
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db,
-                "INSERT INTO listening(song_id,seconds,day,timestamp) VALUES(?,?,?,?)",
+                "INSERT INTO listening(song_id,seconds,day,timestamp,library_id) VALUES(?,?,?,?,?)",
                 -1, &stmt, nil) == SQLITE_OK else { return }
             sqlite3_bind_text(stmt, 1, songId,  -1, TRANSIENT)
             sqlite3_bind_double(stmt, 2, seconds)
             sqlite3_bind_text(stmt, 3, day,     -1, TRANSIENT)
             sqlite3_bind_double(stmt, 4, ts)
+            if let libraryId { sqlite3_bind_text(stmt, 5, libraryId, -1, TRANSIENT) } else { sqlite3_bind_null(stmt, 5) }
             sqlite3_step(stmt)
             sqlite3_finalize(stmt)
         }
@@ -281,24 +322,70 @@ enum PlaybackStore {
         }
     }
 
+    /// Tags legacy events/listening rows (recorded before multi-library support existed,
+    /// so library_id is NULL) by matching each row's song back to a full file path in
+    /// song_paths and checking which configured library folder it falls under. Idempotent
+    /// (only touches NULL rows) and safe to call on every launch/library-list change — it's
+    /// how existing users' listening history gets attributed to a library after the upgrade.
+    /// Rows whose only known path is a bare filename (very old migrated data) can't be
+    /// located and stay unscoped — they still show up in the combined ("All") view.
+    static func backfillLibraryIds(libraries: [Library]) {
+        guard !libraries.isEmpty else { return }
+        // Longest path first so a nested library wins over a parent one it's inside of.
+        let sorted = libraries.sorted { $0.path.count > $1.path.count }
+        queue.async {
+            guard let db else { return }
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, "SELECT path, song_id FROM song_paths", -1, &stmt, nil) == SQLITE_OK else { return }
+            var songToLibrary: [String: String] = [:]
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let path = String(cString: sqlite3_column_text(stmt, 0))
+                guard path.contains("/") else { continue } // bare filename fallback row — can't locate
+                let songId = String(cString: sqlite3_column_text(stmt, 1))
+                if let library = sorted.first(where: { path == $0.path || path.hasPrefix($0.path + "/") }) {
+                    songToLibrary[songId] = library.id
+                }
+            }
+            sqlite3_finalize(stmt)
+            guard !songToLibrary.isEmpty else { return }
+
+            for table in ["events", "listening"] {
+                var upd: OpaquePointer?
+                guard sqlite3_prepare_v2(db,
+                    "UPDATE \(table) SET library_id=? WHERE song_id=? AND library_id IS NULL",
+                    -1, &upd, nil) == SQLITE_OK else { continue }
+                for (songId, libraryId) in songToLibrary {
+                    sqlite3_reset(upd)
+                    sqlite3_bind_text(upd, 1, libraryId, -1, TRANSIENT)
+                    sqlite3_bind_text(upd, 2, songId,    -1, TRANSIENT)
+                    sqlite3_step(upd)
+                }
+                sqlite3_finalize(upd)
+            }
+        }
+    }
+
     // MARK: - Reads
 
-    // Returns (today, week, allTime) totals in seconds
-    static func listeningTotals() -> (today: Double, week: Double, allTime: Double) {
+    // Returns (today, week, allTime) totals in seconds. `libraryId` nil = combined across all libraries.
+    static func listeningTotals(libraryId: String? = nil) -> (today: Double, week: Double, allTime: Double) {
         let today = dayFormatter.string(from: Date())
         let weekStart = dayFormatter.string(from: Calendar.current.date(byAdding: .day, value: -6, to: Date()) ?? Date())
         return queue.sync {
             guard let db else { return (0, 0, 0) }
             var stmt: OpaquePointer?
+            let clause = libraryId != nil ? "WHERE library_id = ?" : ""
             guard sqlite3_prepare_v2(db, """
                 SELECT
                     SUM(seconds),
                     SUM(CASE WHEN day = ?  THEN seconds ELSE 0 END),
                     SUM(CASE WHEN day >= ? THEN seconds ELSE 0 END)
                 FROM listening
+                \(clause)
             """, -1, &stmt, nil) == SQLITE_OK else { return (0, 0, 0) }
             sqlite3_bind_text(stmt, 1, today,     -1, TRANSIENT)
             sqlite3_bind_text(stmt, 2, weekStart, -1, TRANSIENT)
+            if let libraryId { sqlite3_bind_text(stmt, 3, libraryId, -1, TRANSIENT) }
             var result = (today: 0.0, week: 0.0, allTime: 0.0)
             if sqlite3_step(stmt) == SQLITE_ROW {
                 result = (
@@ -312,13 +399,16 @@ enum PlaybackStore {
         }
     }
 
-    static func listeningByDay() -> [(day: String, seconds: Double)] {
+    // `libraryId` nil = combined across all libraries.
+    static func listeningByDay(libraryId: String? = nil) -> [(day: String, seconds: Double)] {
         queue.sync {
             guard let db else { return [] }
             var stmt: OpaquePointer?
+            let clause = libraryId != nil ? "WHERE library_id = ?" : ""
             guard sqlite3_prepare_v2(db,
-                "SELECT day, SUM(seconds) FROM listening GROUP BY day ORDER BY day DESC LIMIT 30",
+                "SELECT day, SUM(seconds) FROM listening \(clause) GROUP BY day ORDER BY day DESC LIMIT 30",
                 -1, &stmt, nil) == SQLITE_OK else { return [] }
+            if let libraryId { sqlite3_bind_text(stmt, 1, libraryId, -1, TRANSIENT) }
             var rows: [(day: String, seconds: Double)] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
                 rows.append((
@@ -452,36 +542,6 @@ enum PlaybackStore {
         }
     }
 
-    static func libraryCounts() -> (songs: Int, artists: Int, albums: Int) {
-        queue.sync {
-            guard let db else { return (0, 0, 0) }
-            var songs = 0, albums = 0
-            var artistTags: [String] = []
-            var stmt: OpaquePointer?
-            if sqlite3_prepare_v2(db, """
-                SELECT
-                    COUNT(*),
-                    COUNT(DISTINCT CASE WHEN album IS NOT NULL AND album <> '' THEN album END)
-                FROM songs
-            """, -1, &stmt, nil) == SQLITE_OK, sqlite3_step(stmt) == SQLITE_ROW {
-                songs  = Int(sqlite3_column_int(stmt, 0))
-                albums = Int(sqlite3_column_int(stmt, 1))
-            }
-            sqlite3_finalize(stmt)
-            var aStmt: OpaquePointer?
-            if sqlite3_prepare_v2(db,
-                "SELECT artist FROM songs WHERE artist IS NOT NULL AND artist <> ''",
-                -1, &aStmt, nil) == SQLITE_OK {
-                while sqlite3_step(aStmt) == SQLITE_ROW {
-                    artistTags.append(String(cString: sqlite3_column_text(aStmt, 0)))
-                }
-            }
-            sqlite3_finalize(aStmt)
-            let distinctArtists = Set(artistTags.flatMap { splitArtists($0) })
-            return (songs, distinctArtists.count, albums)
-        }
-    }
-
     // Splits a combined artist tag ("A, B & C") into individual artist names.
     // ponytail: false-positives on names with literal "," or "&" (e.g. "Earth, Wind & Fire");
     // add an allowlist only if that becomes a real problem.
@@ -492,18 +552,21 @@ enum PlaybackStore {
     }
 
     // Top groups by song dimension attribute — used by StatsView ranked lists.
-    static func topByArtist() -> [(name: String, seconds: Double)] {
+    // `libraryId` nil = combined across all libraries.
+    static func topByArtist(libraryId: String? = nil) -> [(name: String, seconds: Double)] {
         // Fetch raw per-tag totals, then split and re-aggregate so collaborators
         // (e.g. "A & B") each get credit individually.
         let rawRows: [(artist: String, seconds: Double)] = queue.sync {
             guard let db else { return [] }
             var stmt: OpaquePointer?
+            let clause = libraryId != nil ? "AND l.library_id = ?" : ""
             guard sqlite3_prepare_v2(db, """
                 SELECT s.artist, SUM(l.seconds) AS total
                 FROM listening l JOIN songs s ON s.id = l.song_id
-                WHERE s.artist IS NOT NULL AND s.artist <> ''
+                WHERE s.artist IS NOT NULL AND s.artist <> '' \(clause)
                 GROUP BY s.artist
             """, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            if let libraryId { sqlite3_bind_text(stmt, 1, libraryId, -1, TRANSIENT) }
             var rows: [(artist: String, seconds: Double)] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
                 rows.append((
@@ -527,23 +590,25 @@ enum PlaybackStore {
             .map { (name: $0.key, seconds: $0.value) }
     }
 
-    static func topByAlbum()  -> [(name: String, seconds: Double)] { topByAttribute("album")  }
-    static func topByYear()   -> [(name: String, seconds: Double)] { topByAttribute("year")   }
-    static func topByGenre()  -> [(name: String, seconds: Double)] { topByAttribute("genre")  }
+    static func topByAlbum(libraryId: String? = nil)  -> [(name: String, seconds: Double)] { topByAttribute("album", libraryId: libraryId)  }
+    static func topByYear(libraryId: String? = nil)   -> [(name: String, seconds: Double)] { topByAttribute("year", libraryId: libraryId)   }
+    static func topByGenre(libraryId: String? = nil)  -> [(name: String, seconds: Double)] { topByAttribute("genre", libraryId: libraryId)  }
 
-    private static func topByAttribute(_ column: String) -> [(name: String, seconds: Double)] {
+    private static func topByAttribute(_ column: String, libraryId: String? = nil) -> [(name: String, seconds: Double)] {
         queue.sync {
             guard let db else { return [] }
             var stmt: OpaquePointer?
+            let clause = libraryId != nil ? "AND l.library_id = ?" : ""
             guard sqlite3_prepare_v2(db, """
                 SELECT s.\(column), SUM(l.seconds) AS total
                 FROM listening l JOIN songs s ON s.id = l.song_id
-                WHERE s.\(column) IS NOT NULL AND s.\(column) <> ''
+                WHERE s.\(column) IS NOT NULL AND s.\(column) <> '' \(clause)
                 GROUP BY s.\(column)
                 HAVING total >= 3600
                 ORDER BY total DESC
                 LIMIT 10
             """, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            if let libraryId { sqlite3_bind_text(stmt, 1, libraryId, -1, TRANSIENT) }
             var rows: [(name: String, seconds: Double)] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
                 rows.append((

@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct Settings: View {
-    @AppStorage("libraryDirectory") private var libraryPath: String = "/Users/\(NSUserName())/Music"
     @EnvironmentObject private var playerViewModel: AudioPlayerViewModel
     @EnvironmentObject private var libraryViewModel: MusicLibraryViewModel
     // Each element is a group of tracks sharing the same stableId (i.e. same recording).
@@ -9,18 +8,30 @@ struct Settings: View {
 
     var body: some View {
         Form {
-            Section("Library") {
-                LabeledContent("Location") {
+            Section("Libraries") {
+                ForEach(libraryViewModel.libraries) { library in
                     HStack {
-                        Text(libraryPath)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Button("Choose…") { pickFolder() }
+                        VStack(alignment: .leading, spacing: 2) {
+                            TextField("", text: nameBinding(for: library))
+                                .textFieldStyle(.plain)
+                                .font(.body)
+                                .labelsHidden()
+                                .accessibilityLabel("Library name")
+                            Text(library.path)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer()
+                        Button("Remove", role: .destructive) {
+                            libraryViewModel.removeLibrary(library.id)
+                        }
                     }
                 }
-                Button("Rescan Library") {
-                    libraryViewModel.load(from: URL(fileURLWithPath: libraryPath))
+                Button("Add Library…") { addLibrary() }
+                Button("Rescan Libraries") {
+                    libraryViewModel.reload()
                 }
             }
 
@@ -79,14 +90,21 @@ struct Settings: View {
         group.first.map { $0.songURL.deletingPathExtension().lastPathComponent } ?? "Unknown"
     }
 
-    private func pickFolder() {
+    private func nameBinding(for library: Library) -> Binding<String> {
+        Binding(
+            get: { library.name },
+            set: { libraryViewModel.renameLibrary(library.id, to: $0) }
+        )
+    }
+
+    private func addLibrary() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Select"
-        if panel.runModal() == .OK, let url = panel.url {
-            libraryPath = url.path
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Add"
+        if panel.runModal() == .OK {
+            libraryViewModel.addLibraries(panel.urls)
         }
     }
 }

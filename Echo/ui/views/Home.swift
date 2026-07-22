@@ -3,14 +3,18 @@ import SwiftUI
 struct Home: View {
     @ObservedObject var libraryViewModel: MusicLibraryViewModel
     @ObservedObject var playerViewModel: AudioPlayerViewModel
-    @AppStorage("libraryDirectory") var libraryDirectory: String = "/Users/\(NSUserName())/Music"
 
     @State private var searchText = ""
+    @State private var selectedLibraryId: String?
 
     private var filtered: [Song] {
-        guard !searchText.isEmpty else { return libraryViewModel.songs }
+        var result = libraryViewModel.songs
+        if let selectedLibraryId {
+            result = result.filter { $0.libraryId == selectedLibraryId }
+        }
+        guard !searchText.isEmpty else { return result }
         let q = searchText
-        return libraryViewModel.songs.filter {
+        return result.filter {
             $0.title.localizedCaseInsensitiveContains(q)
             || ($0.artist?.localizedCaseInsensitiveContains(q) == true)
             || ($0.album?.localizedCaseInsensitiveContains(q) == true)
@@ -29,13 +33,30 @@ struct Home: View {
         }
         .background(AppColor.background.ignoresSafeArea())
         .searchable(text: $searchText, prompt: "Search songs, artists, albums")
+        .toolbar {
+            // Docked in the same toolbar as the search field (added via .searchable above)
+            // so the two sit next to each other.
+            if libraryViewModel.libraries.count > 1 {
+                ToolbarItem(placement: .automatic) { libraryPicker }
+            }
+        }
         .onChange(of: libraryViewModel.songs) { _, songs in
             playerViewModel.updateLibrary(songs)
         }
         .onAppear {
-            libraryViewModel.load(from: URL(fileURLWithPath: libraryDirectory))
+            libraryViewModel.reload()
             playerViewModel.loadInitialRecommendations(from: libraryViewModel.songs)
         }
+    }
+
+    private var libraryPicker: some View {
+        Picker("Library", selection: $selectedLibraryId) {
+            Text("All Libraries").tag(String?.none)
+            ForEach(libraryViewModel.libraries) { library in
+                Text(library.name).tag(String?.some(library.id))
+            }
+        }
+        .pickerStyle(.menu)
     }
 
     // MARK: - Song List
